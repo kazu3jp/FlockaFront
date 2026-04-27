@@ -8,9 +8,9 @@ Flocka のクライアントアプリ（Expo + React Native）。
 
 Flocka は、趣味やコミュニティごとに使い分けられる電子名刺（プロフィールカード）を交換できるモバイルアプリです。本リポジトリはフロントエンド（React Native / Expo）で、バックエンドは `FlockaAPI` を参照します。
 
-<img src="img/Flocka_ホーム.jpg" alt="Flocka App Screenshot" width="200" />
-<img src="img/Flocka_コレクション.jpg" alt="Flocka App Screenshot" width="200" />
-<img src="img/Flocka_詳細.jpg" alt="Flocka App Screenshot" width="200" />
+| | | |
+| --- | --- | --- |
+| <img src="img/Flocka_ホーム.jpg" alt="Flocka Home" width="200" /> | <img src="img/Flocka_コレクション.jpg" alt="Flocka Collection" width="200" /> | <img src="img/Flocka_詳細.jpg" alt="Flocka Detail" width="200" /> |
 
 ## 主要技術
 
