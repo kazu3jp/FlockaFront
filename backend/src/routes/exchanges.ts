@@ -10,7 +10,6 @@ import type {
   QRExchangeData,
   SendExchangeRequestParams,
   Card,
-  User,
   Exchange,
   QRExchangeLog
 } from '../types';

@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
@@ -6,6 +6,8 @@ import { apiClient } from "../utils/api";
 
 export default function SignUpAuth() {
   const { user, logout } = useAuth();
+  const { email: enteredEmail } = useLocalSearchParams<{ email?: string }>();
+  const email = user?.email ?? enteredEmail;
   const [loading, setLoading] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -48,7 +50,7 @@ export default function SignUpAuth() {
   }, [cooldownSeconds]);
 
   const handleResend = async () => {
-    if (!user?.email) {
+    if (!email) {
       Alert.alert('ユーザー情報がありません', 'サインアップ画面からメールアドレスを入力してください。', [
         { text: 'キャンセル', style: 'cancel' },
         { text: 'サインアップへ', onPress: () => router.push('/sign-up') }
@@ -63,8 +65,8 @@ export default function SignUpAuth() {
 
     try {
       setLoading(true);
-      await apiClient.resendVerificationEmail(user.email);
-      Alert.alert('送信完了', `${user.email} に認証メールを再送しました。メールボックスを確認してください。`);
+      await apiClient.resendVerificationEmail(email);
+      Alert.alert('送信受付', '認証が必要な場合はメールが届きます。メールボックスを確認してください。');
 
       // start cooldown
       setCooldownSeconds(COOLDOWN_SECONDS);
@@ -93,7 +95,7 @@ export default function SignUpAuth() {
     <View style={{ flex: 1, backgroundColor: '#ecebeb', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <View style={{ width: '100%', maxWidth: 420, backgroundColor: '#fff', borderRadius: 12, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}>
         <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>メール認証を完了してください</Text>
-        <Text style={{ fontSize: 14, color: '#6B7280', marginBottom: 20, textAlign: 'center' }}>{user?.email ?? '—'}</Text>
+        <Text style={{ fontSize: 14, color: '#6B7280', marginBottom: 20, textAlign: 'center' }}>{email ?? '—'}</Text>
 
         <Pressable
           onPress={handleResend}

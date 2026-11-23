@@ -14,7 +14,8 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 ## 技術スタック
 
 - API: Cloudflare Workers（Hono）
-- データベース: Cloudflare D1（SQLite）
+- 認証: Better Auth（メール・パスワード、Bearerセッション）
+- データベース: Cloudflare D1（SQLite。アプリデータと認証データを保存）
 - ストレージ: Cloudflare R2（画像ファイル）
 - メール配信: MailChannels API
 - 言語: TypeScript
@@ -24,12 +25,15 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 認証（`/auth`）
 - `POST /register` — 新規登録
 - `POST /login` — ログイン
-- `GET /verify` — メール確認
-- `POST /resend-verification` — 認証メール再送（認証済みが必要な場合あり）
+- `POST /logout` — セッションを無効化
+- `POST /resend-verification-by-email` — 認証メール再送
 - `POST /forgot-password` — パスワードリセット申請
 - `POST /reset-password` — パスワードリセット実行
 - `GET /reset-password` — パスワードリセット用フォーム
 - `GET /me` — 現在のユーザー情報取得
+- `DELETE /me` — アカウント削除
+
+`/auth` はExpoクライアントの既存形式を維持するためのルートです。認証は `/api/auth/*` にマウントした Better Auth が処理します。
 
 カード管理（`/cards`）
 - `POST /upload-url` — 署名付きアップロードURL生成
@@ -71,15 +75,12 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 - ブラウザ向けフォーム: `GET /auth/reset-password?token=...`
 
 仕様の要点:
-- トークンの有効期限は 1 時間（3600 秒）
-- トークンはワンタイム使用（使用済みフラグで管理）
-- 期限切れトークンの自動クリーンアップを行うテーブルを用意
+- トークンはBetter Authが発行・検証し、再利用できません。
+- パスワードを変更すると既存のセッションが失効します。
 
 ## データベース（概要）
 
-主なテーブル: `users`, `cards`（bio カラム含む）, `exchanges`, `qr_exchange_logs`, `qr_exchange_tokens`, `password_reset_tokens`。
-
-例: `qr_exchange_logs` と `password_reset_tokens` はそれぞれ交換ログとパスワードリセットを管理するテーブルです（スキーマは `db/schema.sql` を参照してください）。
+アプリデータは `users`、`cards`、`exchanges`、`qr_exchange_logs` などに格納します。Better Auth は `auth_accounts`、`auth_sessions`、`auth_verifications`、`auth_rate_limits` を使います。スキーマは [`db/migrations/`](db/migrations/) で管理します。
 
 ## 開発・デプロイ
 
@@ -90,11 +91,13 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 ```bash
 npm ci
 cp .dev.vars.example .dev.vars
+# 生成した値を .dev.vars の BETTER_AUTH_SECRET に設定
+openssl rand -hex 32
 npm run db:init
 npm run dev
 ```
 
-認証機能で使用する `JWT_SECRET` は `.dev.vars` に設定します。メール送信を確認する場合は `MAILCHANNELS_API_KEY` も設定します。
+メール送信を確認する場合は `.dev.vars` に `MAILCHANNELS_API_KEY` を設定します。メールの認証・再設定リンクは `BETTER_AUTH_URL` を使うため、実機など別端末でリンクを開く場合は `wrangler.local.jsonc` の値を端末から到達できるURLに変更してください。Expo Webを別のオリジンで使う場合は、そのオリジンを `AUTH_TRUSTED_ORIGINS` に追加します。
 
 ```bash
 npm run type-check
@@ -103,4 +106,8 @@ npm test
 
 `npm test` はWorkerをドライランでビルドし、Miniflareの一時D1を使ってAPIを検証します。本番リソースやメール配信サービスには接続しません。`wrangler.local.jsonc` または `.dev.vars.example` のバインディングを変更したら、`npm run types:generate` で型を再生成してください。
 
-本番デプロイには、対象環境の `wrangler.toml` を `backend/` に配置してから `npm run deploy` を実行します。
+本番では既存の `DB`・`R2` バインディングに加え、`ENVIRONMENT=production`、公開HTTPSの `BETTER_AUTH_URL`、必要に応じて `AUTH_TRUSTED_ORIGINS` を設定します。`BETTER_AUTH_SECRET` と `MAILCHANNELS_API_KEY` は Workers のシークレットに登録します。
+
+既存環境を切り替える場合は、D1をバックアップして検証環境でマイグレーションを確認してから、旧Workerへの書き込みを止めます。本番設定でD1の `migrations_dir` を `db/migrations` に指定し、`npx wrangler d1 migrations apply DB --remote --config wrangler.toml` を実行してから `npm run deploy` で新Workerに切り替えます。この移行は旧Workerとの同時稼働には対応しません。
+
+既存のユーザーID、パスワード、カード、R2の画像キーは保持されます。メールアドレスは小文字に統一され、大文字・小文字だけが異なる重複がある場合は移行が中断します。旧JWTと旧認証・再設定リンクは移行後に無効になるため、ログインし直し、必要ならメールを再発行してください。

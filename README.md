@@ -11,7 +11,7 @@ Flocka は、趣味やコミュニティごとに使い分けられる電子名�
 ## リポジトリ構成
 
 - [`frontend/`](frontend/) は Expo Router、React Native、TypeScript のアプリです。
-- [`backend/`](backend/README.md) は Cloudflare Workers、Hono、D1、R2 のAPIです。
+- [`backend/`](backend/README.md) は Hono、Better Auth、Cloudflare D1／R2 を使う Workers APIです。
 
 ## ローカル開発
 
@@ -22,6 +22,8 @@ npm --prefix frontend ci
 npm --prefix backend ci
 cp backend/.dev.vars.example backend/.dev.vars
 cp frontend/.env.example frontend/.env.local
+# 生成した値を backend/.dev.vars の BETTER_AUTH_SECRET に設定
+openssl rand -hex 32
 npm --prefix backend run db:init
 npm --prefix backend run dev
 ```

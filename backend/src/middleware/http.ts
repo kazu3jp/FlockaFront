@@ -26,11 +26,13 @@ export const corsMiddleware = createMiddleware(async (c, next) => {
 export const requestLogger = createMiddleware(async (c, next) => {
   const start = Date.now();
   await next();
+  const path = c.req.path.startsWith('/api/auth/reset-password/')
+    ? '/api/auth/reset-password/:token' : c.req.path;
 
   console.log({
     message: 'API request',
     method: c.req.method,
-    path: c.req.path,
+    path,
     status: c.res.status,
     durationMs: Date.now() - start,
   });

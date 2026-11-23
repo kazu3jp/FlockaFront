@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { authBasePath, createAuth } from './auth';
 import { corsMiddleware, requestLogger } from './middleware/http';
 import authRoutes from './routes/auth';
 import cardRoutes from './routes/cards';
@@ -21,6 +23,8 @@ app.onError((error, c) => {
 // ルートハンドラーの設定
 app.route('/auth', authRoutes);
 app.route('/users', authRoutes); // 既存の /users/* エイリアスを維持
+app.use(`${authBasePath}/*`, bodyLimit({ maxSize: 16 * 1024 }));
+app.all(`${authBasePath}/*`, (c) => createAuth(c.env, c.executionCtx).handler(c.req.raw));
 app.route('/cards', cardRoutes);
 app.route('/exchanges', exchangeRoutes);
 app.route('/cleanup', cleanupRoutes);
@@ -47,9 +51,10 @@ app.get('/api/version', (c) => {
         auth: [
           'POST /auth/register',
           'POST /auth/login',
-          'POST /auth/verify-email',
-          'GET /auth/verify',
-          'GET /auth/verify-status/:userId',
+          'POST /auth/logout',
+          'POST /auth/resend-verification-by-email',
+          'POST /auth/forgot-password',
+          'POST /auth/reset-password',
           'GET /users/me',
           'DELETE /users/me',
         ],

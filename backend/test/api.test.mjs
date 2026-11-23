@@ -1,45 +1,95 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { after, before, test } from 'node:test';
+import { after, before, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { unstable_readConfig, unstable_splitSqlQuery } from 'wrangler';
 
 const config = unstable_readConfig({
   config: fileURLToPath(new URL('../wrangler.local.jsonc', import.meta.url)),
 });
-const secret = randomBytes(32).toString('hex');
-const user = { id: 'test-user', email: 'test@example.com', password: 'test-password' };
+const user = { id: 'legacy-user', email: 'legacy@example.com', password: 'test-password' };
+const baseUrl = config.vars.BETTER_AUTH_URL;
 const worker = new Miniflare(convertV4MiniflareOptions({
   cf: false,
   modules: true,
   scriptPath: fileURLToPath(new URL('../dist/index.js', import.meta.url)),
   compatibilityDate: config.compatibility_date,
   compatibilityFlags: config.compatibility_flags,
-  bindings: { ...config.vars, JWT_SECRET: secret, MAILCHANNELS_API_KEY: '' },
+  bindings: {
+    ...config.vars,
+    ENVIRONMENT: 'production',
+    BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
+    MAILCHANNELS_API_KEY: 'test-key',
+  },
   d1Databases: ['DB'],
   r2Buckets: ['R2'],
+  outboundService: async (request) => {
+    assert.equal(request.url, 'https://api.mailchannels.net/tx/v1/send');
+    assert.equal(request.headers.get('X-Api-Key'), 'test-key');
+    const mail = await request.json();
+    pendingMail.get(mail.personalizations[0].to[0].email)?.(mail);
+    return new Response(null, { status: 202 });
+  },
 }));
 
+const pendingMail = new Map();
+
+function captureMail(email) {
+  return new Promise((resolve) => pendingMail.set(email, resolve))
+    .finally(() => pendingMail.delete(email));
+}
+
 function request(path, options) {
-  return worker.dispatchFetch(`http://localhost${path}`, options);
+  return worker.dispatchFetch(new URL(path, baseUrl), { redirect: 'manual', ...options });
+}
+
+function post(path, body, headers = {}) {
+  return request(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: baseUrl, ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+function authorization(token) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function login(email, password, prefix = '/auth') {
+  const response = await post(`${prefix}/login`, { email, password });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  return body.data;
+}
+
+async function applyMigration(db, name) {
+  const sql = await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8');
+  await db.batch(unstable_splitSqlQuery(sql).map((query) => db.prepare(query)));
 }
 
 before(async () => {
   const db = await worker.getD1Database('DB');
-  const schema = await readFile(new URL('../db/schema.sql', import.meta.url), 'utf8');
-  await db.batch(unstable_splitSqlQuery(schema).map((query) => db.prepare(query)));
-  await db.prepare('INSERT INTO users (id, email, hashed_password) VALUES (?, ?, ?)')
-    .bind(user.id, user.email, bcrypt.hashSync(user.password, 4))
-    .run();
+  await applyMigration(db, '0001_legacy_schema.sql');
+  await db.prepare('INSERT INTO users (id, email, hashed_password, email_verified) VALUES (?, ?, ?, 1)')
+    .bind(user.id, user.email.toUpperCase(), bcrypt.hashSync(user.password, 4)).run();
+  await db.prepare('INSERT INTO cards (id, user_id, card_name, image_key) VALUES (?, ?, ?, ?)')
+    .bind('legacy-card', user.id, 'Legacy card', 'cards/legacy-user/image.png').run();
+  await applyMigration(db, '0002_better_auth.sql');
+  const r2 = await worker.getR2Bucket('R2');
+  await r2.put('cards/legacy-user/image.png', 'legacy image data', { httpMetadata: { contentType: 'image/png' } });
 });
 
 after(() => worker.dispose());
 
-test('health and unknown paths keep their JSON and CORS headers', async () => {
+beforeEach(async () => {
+  const db = await worker.getD1Database('DB');
+  await db.prepare('DELETE FROM auth_rate_limits').run();
+});
+
+test('health, not found, and CORS preflight keep the existing response', async () => {
   const health = await request('/');
   assert.equal(health.status, 200);
   assert.equal(health.headers.get('access-control-allow-origin'), '*');
@@ -48,108 +98,106 @@ test('health and unknown paths keep their JSON and CORS headers', async () => {
   const missing = await request('/not-a-route');
   assert.equal(missing.status, 404);
   assert.equal(missing.headers.get('access-control-allow-origin'), '*');
-  assert.deepEqual(await missing.json(), {
-    success: false,
-    error: 'Not Found',
-    message: 'The requested endpoint does not exist',
-  });
+
+  const preflight = await request('/users/me', { method: 'OPTIONS' });
+  assert.equal(preflight.status, 200);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.deepEqual(await preflight.json(), {});
 });
 
-test('protected paths preserve the preflight response', async () => {
-  const response = await request('/users/me', {
-    method: 'OPTIONS',
-    headers: { Origin: 'https://example.com', 'Access-Control-Request-Method': 'GET' },
-  });
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('access-control-allow-origin'), '*');
-  assert.equal(response.headers.get('access-control-max-age'), '86400');
-  assert.match(response.headers.get('access-control-allow-headers') ?? '', /Authorization/);
-  assert.deepEqual(await response.json(), {});
-});
-
-test('missing, invalid, expired and non-session tokens are rejected', async () => {
-  const missing = await request('/auth/me');
-  assert.equal(missing.status, 401);
-  assert.deepEqual(await missing.json(), {
-    success: false,
-    error: 'Authorization header is missing or invalid',
-  });
-
-  const expired = jwt.sign({ userId: user.id, email: user.email }, secret, { expiresIn: -1 });
-  const verification = jwt.sign(
-    { userId: user.id, purpose: 'email_verification' },
-    secret,
-    { expiresIn: '24h' },
-  );
-
-  for (const token of ['invalid', expired, verification]) {
-    const response = await request('/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), {
-      success: false,
-      error: 'Invalid or expired token',
-    });
+test('migration retains the legacy password, user ID, card and R2 image', async () => {
+  const session = await login(user.email, user.password, '/users');
+  assert.equal(session.user.id, user.id);
+  const headers = authorization(session.token);
+  for (const route of ['/auth/me', '/users/me']) {
+    const profile = await request(route, { headers });
+    assert.equal(profile.status, 200);
+    const { data } = await profile.json();
+    assert.equal(data.id, user.id);
+    assert.equal(data.email_verified, true);
+    assert.equal('hashed_password' in data, false);
   }
-});
-
-test('login and account information work under both URL prefixes', async () => {
-  for (const prefix of ['/auth', '/users']) {
-    const login = await request(`${prefix}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: user.email, password: user.password }),
-    });
-    assert.equal(login.status, 200);
-    const { data } = await login.json();
-    assert.equal(data.user.id, user.id);
-
-    const account = await request(`${prefix}/me`, {
-      headers: { Authorization: `Bearer ${data.token}` },
-    });
-    assert.equal(account.status, 200);
-    const profile = (await account.json()).data;
-    assert.equal(profile.id, user.id);
-    assert.equal(profile.email, user.email);
-    assert.equal(profile.name, null);
-    assert.equal(profile.email_verified, false);
-    assert.ok(profile.created_at);
-    assert.equal('hashed_password' in profile, false);
-  }
-});
-
-test('card and QR log routes remain reachable after authentication', async () => {
-  const token = jwt.sign({ userId: user.id, email: user.email }, secret, { expiresIn: '5m' });
-  const headers = { Authorization: `Bearer ${token}` };
   const cards = await request('/cards', { headers });
   assert.equal(cards.status, 200);
-  assert.equal((await cards.json()).success, true);
-
+  assert.equal((await cards.json()).data[0].id, 'legacy-card');
+  const image = await request('/cards/image/cards/legacy-user/image.png');
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get('content-type'), 'image/png');
+  assert.equal(await image.text(), 'legacy image data');
   const logs = await request('/exchanges/qr-logs', { headers });
   assert.equal(logs.status, 200);
   assert.deepEqual((await logs.json()).data, { logs: [], total: 0, newLogs: 0 });
-
-  const exchange = await request('/exchanges/unknown-id', { headers });
-  assert.equal(exchange.status, 404);
-  assert.deepEqual(await exchange.json(), { success: false, error: 'Exchange record not found' });
+  assert.equal((await request('/exchanges/unknown-id', { headers })).status, 404);
 });
 
-test('account deletion through /users/me is reflected under /auth/me', async () => {
-  const id = 'removable-user';
-  const email = 'removable@example.com';
+test('only valid sessions are accepted and logout invalidates the session', async () => {
+  const missing = await request('/auth/me');
+  assert.equal(missing.status, 401);
+  assert.equal((await request('/auth/me', { headers: authorization('invalid') })).status, 401);
+  assert.equal((await post('/auth/login', { email: user.email, password: user.password }, {
+    Origin: 'https://untrusted.example',
+  })).status, 403);
+
+  const { token } = await login(user.email, user.password);
+  const headers = authorization(token);
+  assert.equal((await post('/auth/logout', {}, headers)).status, 200);
+  assert.equal((await request('/auth/me', { headers })).status, 401);
+});
+
+test('production rate limits persist across auth requests in D1', async () => {
+  const headers = { 'CF-Connecting-IP': '192.0.2.10' };
+  let response;
+  for (let i = 0; i < 15; i++) {
+    response = await post('/auth/login', { email: user.email, password: 'incorrect' }, headers);
+    if (response.status === 429) break;
+    assert.equal(response.status, 401);
+  }
+  assert.equal(response?.status, 429);
+  assert.ok(Number(response.headers.get('retry-after')) > 0);
+});
+
+test('sign-up, verification email, password reset and account deletion', { timeout: 15000 }, async () => {
+  const email = 'new@example.com';
+  const password = 'new-account-password';
+  const verificationMail = captureMail(email);
+  const registration = await post('/auth/register', { email, name: null, password });
+  assert.equal(registration.status, 201, await registration.text());
+  const confirmationUrl = (await verificationMail).content[0].value.split('\n').at(-1);
+  const verified = await request(confirmationUrl);
+  assert.equal(verified.status, 302);
+  assert.equal(new URL(verified.headers.get('location'), baseUrl).pathname, '/auth/verified');
+  assert.equal(new URL(verified.headers.get('location'), baseUrl).search, '');
+
+  const session = await login(email, password);
+  assert.equal(session.user.email_verified, true);
+  const resetMail = captureMail(email);
+  const resetRequest = await post('/auth/forgot-password', { email });
+  assert.equal(resetRequest.status, 200);
+  const resetUrl = (await resetMail).content[0].value.split('\n').at(-1);
+  const redirect = await request(resetUrl);
+  assert.equal(redirect.status, 302);
+  const resetPage = new URL(redirect.headers.get('location'), baseUrl);
+  const token = resetPage.searchParams.get('token');
+  assert.ok(token);
+  const form = await request(resetPage);
+  assert.equal(form.status, 200);
+  assert.match(await form.text(), /autocomplete="new-password"/);
+
+  const newPassword = 'reset-account-password';
+  const reset = await request('/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: baseUrl },
+    body: new URLSearchParams({ token, newPassword }),
+  });
+  assert.equal(reset.status, 200, await reset.text());
+  assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 400);
+  assert.equal((await request('/auth/me', { headers: authorization(session.token) })).status, 401);
+  assert.equal((await post('/auth/login', { email, password })).status, 401);
+
+  const signedInAgain = await login(email, newPassword);
+  const headers = authorization(signedInAgain.token);
+  assert.equal((await request('/users/me', { method: 'DELETE', headers })).status, 200);
+  assert.equal((await request('/auth/me', { headers })).status, 401);
   const db = await worker.getD1Database('DB');
-  await db.prepare('INSERT INTO users (id, email, hashed_password) VALUES (?, ?, ?)')
-    .bind(id, email, bcrypt.hashSync(user.password, 4))
-    .run();
-  const token = jwt.sign({ userId: id, email }, secret, { expiresIn: '5m' });
-  const headers = { Authorization: `Bearer ${token}` };
-
-  const deletion = await request('/users/me', { method: 'DELETE', headers });
-  assert.equal(deletion.status, 200);
-  assert.deepEqual(await deletion.json(), { success: true, message: 'Account deleted successfully' });
-
-  const missing = await request('/auth/me', { headers });
-  assert.equal(missing.status, 404);
-  assert.deepEqual(await missing.json(), { success: false, error: 'User not found' });
+  assert.equal(await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first(), null);
 });

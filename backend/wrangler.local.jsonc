@@ -5,13 +5,16 @@
   "compatibility_date": "2025-08-23",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "development",
+    "BETTER_AUTH_URL": "http://localhost:8787",
+    "AUTH_TRUSTED_ORIGINS": "http://localhost:8081,http://127.0.0.1:8081"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "flocka-db",
-      "database_id": "00000000-0000-0000-0000-000000000001"
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "db/migrations"
     }
   ],
   "r2_buckets": [

@@ -10,19 +10,16 @@
     "test": "npm run build && node --test",
     "types:generate": "wrangler types --config wrangler.local.jsonc --env-file .dev.vars.example --env-interface WorkerBindings --include-runtime=false --strict-vars=false src/worker-configuration.d.ts",
     "type-check": "tsc --noEmit",
-    "db:init": "wrangler d1 execute flocka-db --config wrangler.local.jsonc --local --file=./db/schema.sql",
-    "db:generate": "wrangler d1 execute flocka-db --file=./db/schema.sql",
-    "db:migrate": "wrangler d1 migrations apply flocka-db"
+    "db:init": "wrangler d1 migrations apply DB --config wrangler.local.jsonc --local"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "hono": "^4.13.20",
-    "jsonwebtoken": "^9.0.2"
+    "better-auth": "^1.7.27",
+    "hono": "^4.13.20"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261123.1",
     "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.5",
     "miniflare": "^5.20261119.0-beta",
     "typescript": "^5.3.3",
     "wrangler": "^4.166.0"

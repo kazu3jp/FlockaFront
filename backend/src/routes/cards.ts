@@ -4,7 +4,6 @@ import type { HonoEnv, CreateCardRequest, UpdateCardRequest, Card, UploadUrlRequ
 import { 
   generateExchangeToken, 
   generateCardExchangeQRData,
-  generateCardShareURL,
   validateCardName,
   validateCardLinks,
   validateFileName,
@@ -844,7 +843,7 @@ cards.post('/:id/share', authMiddleware, async (c) => {
     }
 
     // 共有URL生成
-    const shareUrl = generateCardShareURL(cardId);
+    const shareUrl = `https://flocka.net/card/${cardId}`;
     
     // QR用データ（交換用ではなく閲覧用）
     const qrData = JSON.stringify({

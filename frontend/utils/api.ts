@@ -63,7 +63,7 @@ export class ApiClient {
     skipAuth: boolean = false
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`;
-    const token = await tokenManager.get();
+    const token = skipAuth ? null : await tokenManager.get();
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -76,13 +76,12 @@ export class ApiClient {
     }
 
     const config: RequestInit = {
-      headers,
       ...options,
+      headers,
     };
 
     try {
       console.log(`API Request: ${options.method || 'GET'} ${url}`);
-      console.log('Request headers:', headers);
       const response = await fetch(url, config);
       
       let data;
@@ -93,7 +92,6 @@ export class ApiClient {
         throw new Error('Invalid response format');
       }
 
-      console.log(`API Response: ${response.status}`, data);
 
       if (!response.ok) {
         throw new Error(data.error || `HTTP ${response.status}: API request failed`);
@@ -150,7 +148,13 @@ export class ApiClient {
 
   // ログアウト
   async logout(): Promise<void> {
-    await tokenManager.remove();
+    try {
+      if (await tokenManager.get()) {
+        await this.request('/auth/logout', { method: 'POST' });
+      }
+    } finally {
+      await tokenManager.remove();
+    }
   }
 
   // 現在のユーザー情報を取得
@@ -171,18 +175,6 @@ export class ApiClient {
       return true;
     } catch {
       return false;
-    }
-  }
-
-  // メールアドレス認証
-  async verifyEmail(token: string): Promise<void> {
-    const response = await this.request('/auth/verify-email', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
-    }, true); // skipAuth = true
-
-    if (!response.success) {
-      throw new Error(response.error || 'Email verification failed');
     }
   }
 

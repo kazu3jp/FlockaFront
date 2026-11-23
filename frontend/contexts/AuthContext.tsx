@@ -53,7 +53,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (isValid) {
         const userData = await apiClient.getCurrentUser();
-        console.log('User data retrieved:', userData);
         setUser(userData as User);
       } else {
         console.log('Token invalid, clearing user state');
@@ -82,9 +81,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async () => {
     try {
       await apiClient.logout();
-      setUser(null);
     } catch (error) {
       console.error('Logout failed:', error);
+    } finally {
+      setUser(null);
     }
   };
 

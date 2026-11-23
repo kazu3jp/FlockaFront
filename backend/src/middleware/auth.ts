@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { HonoEnv } from '../types';
-import { verifyJWT } from '../utils/auth';
+import { createAuth } from '../auth';
 
 export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   const authorization = c.req.header('Authorization');
@@ -12,15 +12,17 @@ export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
     }, 401);
   }
 
-  const payload = verifyJWT(authorization.slice(7), c.env.JWT_SECRET);
-  if (!payload) {
+  const session = await createAuth(c.env, c.executionCtx).api.getSession({
+    headers: new Headers({ Authorization: authorization }),
+  });
+  if (!session) {
     return c.json({
       success: false,
       error: 'Invalid or expired token',
     }, 401);
   }
 
-  c.set('user', payload);
+  c.set('user', { userId: session.user.id });
   return next();
 });
 
