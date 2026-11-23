@@ -1,5 +1,5 @@
 import { Image, Text, View } from 'react-native';
-import { CARD_ASPECT_RATIO } from '../../constants/card';
+import { CARD_ASPECT_RATIO } from '@/constants/card';
 
 type CardImagePreviewProps = {
   imageUri?: string | null;

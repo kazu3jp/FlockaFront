@@ -1,31 +1,78 @@
+import { LoadingButton } from '@/components/form/LoadingButton';
+import { LoadingView } from '@/components/layout/LoadingView';
+import { APP_BACKGROUND_COLOR } from '@/constants/ui';
+import { confirmAlert } from '@/utils/alert';
+import { apiClient, type CardLink, type CollectionItem } from '@/utils/api';
+import { getErrorMessage } from '@/utils/errors';
 import { MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, Linking, Modal, Pressable, Text, TextInput, View } from "react-native";
-import { apiClient } from "../utils/api";
+import { Alert, Image, Linking, Modal, Pressable, Text, TextInput, View } from "react-native";
 
-interface ExchangeDetail {
-  id: string;
-  card: {
-    id: string;
-    card_name: string;
-    image_key?: string;
-    image_url?: string;
-    bio?: string | null;
-    links?: {
-      title: string;
-      url: string;
-    }[];
-    owner_name?: string;
-  };
-  memo?: string;
-  location_name?: string;
-  created_at: string;
+/** リンクのボタン一覧（リンクがなければ「リンクなし」） */
+function LinkButtons({ links }: { links?: CardLink[] }) {
+  if (!Array.isArray(links) || links.length === 0) {
+    return <Text className="text-gray-500 mb-4">リンクなし</Text>;
+  }
+  return (
+    <View className="flex-row gap-4 mb-4 flex-wrap justify-center">
+      {links.map((item, index) => (
+        <Pressable
+          key={index}
+          onPress={() => Linking.openURL(item.url)}
+          className="min-w-32 p-3 rounded-lg border border-gray-300 items-center"
+        >
+          <Text className="text-center font-medium text-xs">{item.title}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+type MemoEditModalProps = {
+  memo: string;
+  onChangeMemo: (memo: string) => void;
+  updating: boolean;
+  onSubmit: () => void;
+  onClose: () => void;
+};
+
+/** メモ編集モーダル */
+function MemoEditModal({ memo, onChangeMemo, updating, onSubmit, onClose }: MemoEditModalProps) {
+  return (
+    <Modal transparent onRequestClose={onClose}>
+      <View className="flex-1 items-center justify-center bg-black/30">
+        <View className="w-80 bg-white rounded-2xl p-6 shadow-gray-200 shadow-sm">
+          {/* 閉じるボタン */}
+          <Pressable onPress={onClose} className="mb-4 self-end">
+            <MaterialIcons name="close" size={28} color="black" />
+          </Pressable>
+          {/* メモ入力 */}
+          <TextInput
+            placeholder="メモを入力"
+            value={memo}
+            onChangeText={onChangeMemo}
+            multiline
+            numberOfLines={4}
+            className="border border-gray-300 rounded p-2 w-full h-28 mb-4"
+          />
+          {/* 変更を反映 */}
+          <LoadingButton
+            label="変更を反映する"
+            loadingLabel="更新中..."
+            loading={updating}
+            onPress={onSubmit}
+            className={`rounded w-full p-4 mb-4 ${updating ? 'bg-gray-400' : 'bg-black'}`}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 export default function CardDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [exchangeData, setExchangeData] = useState<ExchangeDetail | null>(null);
+  const [exchangeData, setExchangeData] = useState<CollectionItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
@@ -45,22 +92,22 @@ export default function CardDetail() {
       try {
         setLoading(true);
         setError(null);
-        
+
         // 一旦コレクション一覧を取得して、該当するアイテムを探す
         // (個別エンドポイントが404のため)
         const collections = await apiClient.getCollection();
         const targetExchange = collections.find(item => item.id === id);
-        
+
         if (!targetExchange) {
           setError('指定されたカードが見つかりません');
           return;
         }
-        
+
         setExchangeData(targetExchange);
         setMemo(targetExchange.memo || "");
       } catch (err) {
         console.error('Failed to fetch exchange detail:', err);
-        setError(err instanceof Error ? err.message : 'データの取得に失敗しました');
+        setError(getErrorMessage(err, 'データの取得に失敗しました'));
       } finally {
         setLoading(false);
       }
@@ -75,16 +122,13 @@ export default function CardDetail() {
 
     try {
       setUpdating(true);
-      
+
       // APIでメモを更新
       await apiClient.updateExchangeMemo(id, memo);
-      
+
       // ローカル状態も更新
-      setExchangeData({
-        ...exchangeData,
-        memo: memo
-      });
-      
+      setExchangeData({ ...exchangeData, memo });
+
       setModalVisible(false);
       Alert.alert('成功', 'メモを更新しました。');
     } catch (err) {
@@ -97,48 +141,43 @@ export default function CardDetail() {
 
   // コレクション削除処理
   const handleDeleteExchange = () => {
-    Alert.alert(
-      'コレクションから削除',
-      'この名刺をコレクションから削除しますか？\nこの操作は取り消せません。',
-      [
-        {
-          text: 'キャンセル',
-          style: 'cancel'
-        },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setDeleting(true);
-              await apiClient.deleteExchange(id!);
-              Alert.alert('削除完了', 'コレクションから削除しました。', [
-                { text: 'OK', onPress: () => {
-                    router.back();
-                    // コレクションページを更新
-                    router.replace('/(tabs)/correction');
-                  }
-                }
-              ]);
-            } catch (err) {
-              console.error('Failed to delete exchange:', err);
-              Alert.alert('エラー', '削除に失敗しました。もう一度お試しください。');
-            } finally {
-              setDeleting(false);
+    confirmAlert({
+      title: 'コレクションから削除',
+      message: 'この名刺をコレクションから削除しますか？\nこの操作は取り消せません。',
+      confirmText: '削除',
+      onConfirm: async () => {
+        try {
+          setDeleting(true);
+          await apiClient.deleteExchange(id);
+          Alert.alert('削除完了', 'コレクションから削除しました。', [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.back();
+                // コレクションページを更新
+                router.replace('/(tabs)/correction');
+              }
             }
-          }
+          ]);
+        } catch (err) {
+          console.error('Failed to delete exchange:', err);
+          Alert.alert('エラー', '削除に失敗しました。もう一度お試しください。');
+        } finally {
+          setDeleting(false);
         }
-      ]
-    );
+      },
+    });
   };
 
   // ローディング中の表示
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-100">
-        <ActivityIndicator size="large" color="#3B82F6" />
-        <Text className="mt-4 text-gray-600">カード詳細を読み込み中...</Text>
-      </View>
+      <LoadingView
+        message="カード詳細を読み込み中..."
+        color="#3B82F6"
+        className="flex-1 items-center justify-center bg-gray-100"
+        textClassName="mt-4 text-gray-600"
+      />
     );
   }
 
@@ -166,11 +205,12 @@ export default function CardDetail() {
     );
   }
 
-  // 背景色を#ecebebに変更
+  const { card } = exchangeData;
+
   return (
-    <View className="flex-1 items-center justify-center px-10" style={{ backgroundColor: '#ecebeb' }}>
+    <View className="flex-1 items-center justify-center px-10" style={{ backgroundColor: APP_BACKGROUND_COLOR }}>
       <Image
-        source={{ uri: apiClient.resolveCardImageUrl(exchangeData.card.image_url, exchangeData.card.image_key) }}
+        source={{ uri: apiClient.resolveCardImageUrl(card.image_url, card.image_key) }}
         className="w-full border border-gray-300 mb-8"
         style={{ aspectRatio: 1.5, height: 250 }}
         resizeMode="cover"
@@ -180,26 +220,12 @@ export default function CardDetail() {
         }}
       />
       <View className="bg-white p-6 rounded-lg w-full flex-col items-center shadow-gray-200 shadow-sm">
-        <Text className="text-2xl font-bold mb-4">{exchangeData.card.card_name}</Text>
-        {exchangeData.card.bio && (
-          <Text className="text-gray-600 text-sm mb-4 text-center">{exchangeData.card.bio}</Text>
+        <Text className="text-2xl font-bold mb-4">{card.card_name}</Text>
+        {card.bio && (
+          <Text className="text-gray-600 text-sm mb-4 text-center">{card.bio}</Text>
         )}
         {/* 各種リンク */}
-        {Array.isArray(exchangeData.card.links) && exchangeData.card.links.length > 0 ? (
-          <View className="flex-row gap-4 mb-4 flex-wrap justify-center">
-            {exchangeData.card.links.map((item, index) => (
-              <Pressable
-                key={index}
-                onPress={() => Linking.openURL(item.url)}
-                className="min-w-32 p-3 rounded-lg border border-gray-300 items-center"
-              >
-                <Text className="text-center font-medium text-xs">{item.title}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : (
-          <Text className="text-gray-500 mb-4">リンクなし</Text>
-        )}
+        <LinkButtons links={card.links} />
         {/* 交換場所 */}
         {exchangeData.location_name && (
           <Text className="text-gray-500 text-sm mb-2">
@@ -223,65 +249,24 @@ export default function CardDetail() {
             <MaterialIcons name="edit" size={24} color="gray" />
           </View>
         </Pressable>
-        
+
         {/* 削除ボタン */}
-        <Pressable 
-          onPress={handleDeleteExchange} 
+        <LoadingButton
+          label="コレクションから削除"
+          loadingLabel="削除中..."
+          loading={deleting}
+          onPress={handleDeleteExchange}
           className="bg-red-500 p-4 rounded-lg w-full"
-          disabled={deleting}
           style={{ opacity: deleting ? 0.6 : 1 }}
-        >
-          {deleting ? (
-            <View className="flex-row items-center justify-center">
-              <ActivityIndicator size="small" color="white" />
-              <Text className="text-white font-bold ml-2">削除中...</Text>
-            </View>
-          ) : (
-            <Text className="text-white font-bold text-center">コレクションから削除</Text>
-          )}
-        </Pressable>
-        {/* モーダル */}
+        />
         {modalVisible && (
-          <Modal
-            transparent
-            onRequestClose={() => setModalVisible(false)}
-          >
-            <View className="flex-1 items-center justify-center bg-black/30">
-              <View className="w-80 bg-white rounded-2xl p-6 shadow-gray-200 shadow-sm">
-                {/* 閉じるボタン */}
-                <Pressable
-                  onPress={() => setModalVisible(false)}
-                  className="mb-4 self-end"
-                >
-                  <MaterialIcons name="close" size={28} color="black" />
-                </Pressable>
-                {/* メモ入力 */}
-                <TextInput
-                  placeholder="メモを入力"
-                  value={memo}
-                  onChangeText={setMemo}
-                  multiline
-                  numberOfLines={4}
-                  className="border border-gray-300 rounded p-2 w-full h-28 mb-4"
-                />
-                {/* 変更を反映 */}
-                <Pressable
-                  className={`rounded w-full p-4 mb-4 ${updating ? 'bg-gray-400' : 'bg-black'}`}
-                  onPress={handleUpdateMemo}
-                  disabled={updating}
-                >
-                  {updating ? (
-                    <View className="flex-row items-center justify-center">
-                      <ActivityIndicator size="small" color="white" />
-                      <Text className="text-white font-bold ml-2">更新中...</Text>
-                    </View>
-                  ) : (
-                    <Text className="text-white font-bold text-center">変更を反映する</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </Modal>
+          <MemoEditModal
+            memo={memo}
+            onChangeMemo={setMemo}
+            updating={updating}
+            onSubmit={handleUpdateMemo}
+            onClose={() => setModalVisible(false)}
+          />
         )}
       </View>
     </View>
