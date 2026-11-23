@@ -381,9 +381,10 @@ export class ApiClient {
     return `${this.baseUrl}/cards/image/${imageKey}`;
   }
 
-  // APIのベースURLを取得
-  getBaseUrl(): string {
-    return this.baseUrl;
+  resolveCardImageUrl(imageUrl?: string | null, imageKey?: string | null): string | undefined {
+    if (imageUrl?.startsWith('/cards/image/')) return `${this.baseUrl}${imageUrl}`;
+    if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl;
+    return imageKey ? this.getCardImageUrl(imageKey) : undefined;
   }
 
   // QRコード交換用データを生成（v1.3.0対応）

@@ -252,9 +252,7 @@ const PagerScrollView = forwardRef((props, ref) => {
                       }}
                     >
                       <Image
-                        source={{ 
-                          uri: item.card.image_url?.replace('https://flocka-storage.kazu3jp-purin.workers.dev/', 'https://img.flocka.net/') || `${apiClient.getBaseUrl()}/cards/image/${item.card.image_key}` 
-                        }}
+                        source={{ uri: apiClient.resolveCardImageUrl(item.card.image_url, item.card.image_key) }}
                         style={{ width: '100%', height: cardImageHeight }}
                         resizeMode="cover"
                       />

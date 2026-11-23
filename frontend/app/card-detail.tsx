@@ -170,9 +170,7 @@ export default function CardDetail() {
   return (
     <View className="flex-1 items-center justify-center px-10" style={{ backgroundColor: '#ecebeb' }}>
       <Image
-        source={{ 
-          uri: exchangeData.card.image_url?.replace('https://flocka-storage.kazu3jp-purin.workers.dev/', 'https://img.flocka.net/') || `https://img.flocka.net/cards/image/${exchangeData.card.image_key}` || 'https://via.placeholder.com/250',
-        }}
+        source={{ uri: apiClient.resolveCardImageUrl(exchangeData.card.image_url, exchangeData.card.image_key) }}
         className="w-full border border-gray-300 mb-8"
         style={{ aspectRatio: 1.5, height: 250 }}
         resizeMode="cover"

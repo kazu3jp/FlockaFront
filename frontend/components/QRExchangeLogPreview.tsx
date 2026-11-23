@@ -76,9 +76,7 @@ export default function QRExchangeLogPreview({
             </Text>
             {(exchangeLog.scannerCard.image_url || exchangeLog.scannerCard.image_key) ? (
               (() => {
-                const imageUri = exchangeLog.scannerCard.image_url 
-                  ? `${apiClient.getBaseUrl()}${exchangeLog.scannerCard.image_url}` 
-                  : apiClient.getCardImageUrl(exchangeLog.scannerCard.image_key!);
+                const imageUri = apiClient.resolveCardImageUrl(exchangeLog.scannerCard.image_url, exchangeLog.scannerCard.image_key);
                 console.log('QR Exchange Image URI:', imageUri);
                 return (
                   <Image

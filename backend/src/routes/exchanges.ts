@@ -1,5 +1,6 @@
 import { Hono, type Handler } from 'hono';
 import { authMiddleware, getCurrentUser } from '../middleware/auth';
+import { cardImageUrl } from '../utils/image';
 import type { 
   HonoEnv, 
   CreateExchangeRequest, 
@@ -82,7 +83,7 @@ exchanges.get('/', authMiddleware, async (c) => {
         id: row.card_id,
         card_name: row.card_name,
         bio: row.bio,
-        image_url: row.image_key ? `https://flocka-storage.kazu3jp-purin.workers.dev/${row.image_key}` : null,
+        image_url: cardImageUrl(row.image_key, c.req.url),
         links: row.links ? JSON.parse(row.links) : [],
         owner_name: row.owner_name,
       },
@@ -301,7 +302,7 @@ const getExchange: Handler<HonoEnv, '/:id'> = async (c) => {
         id: row.card_id,
         card_name: row.card_name,
         bio: row.bio,
-        image_url: row.image_key ? `https://flocka-storage.kazu3jp-purin.workers.dev/${row.image_key}` : null,
+        image_url: cardImageUrl(row.image_key, c.req.url),
         links: row.links ? JSON.parse(row.links) : [],
         owner_name: row.owner_name,
       },
@@ -673,7 +674,7 @@ exchanges.post('/qr', authMiddleware, async (c) => {
             id: otherCard.id,
             name: otherCard.card_name,
             bio: otherCard.bio,
-            image_url: otherCard.image_key ? `https://flocka-storage.kazu3jp-purin.workers.dev/${otherCard.image_key}` : null,
+            image_url: cardImageUrl(otherCard.image_key, c.req.url),
           },
           yourCardSent: {
             id: myCard.id,
@@ -781,7 +782,7 @@ exchanges.get('/qr-logs', authMiddleware, async (c) => {
         id: row.scanner_card_id,
         name: row.scanner_card_name,
         bio: row.scanner_card_bio,
-        image_url: row.scanner_card_image_key ? `https://flocka-storage.kazu3jp-purin.workers.dev/${row.scanner_card_image_key}` : null,
+        image_url: cardImageUrl(row.scanner_card_image_key, c.req.url),
       },
       qrCard: {
         id: row.qr_card_id,

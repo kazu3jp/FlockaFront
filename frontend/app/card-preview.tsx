@@ -226,9 +226,7 @@ export default function CardPreview() {
           <View className="bg-white rounded-lg shadow-sm p-4 mb-4">
             {(cardData.card.image_url || cardData.card.image_key) ? (
               (() => {
-                const imageUri = cardData.card.image_url 
-                  ? `${apiClient.getBaseUrl()}${cardData.card.image_url}` 
-                  : apiClient.getCardImageUrl(cardData.card.image_key!);
+                const imageUri = apiClient.resolveCardImageUrl(cardData.card.image_url, cardData.card.image_key);
                 console.log('Image URI:', imageUri);
                 return (
                   <Image

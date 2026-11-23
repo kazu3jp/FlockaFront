@@ -1,12 +1,18 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { authMiddleware, getCurrentUser } from '../middleware/auth';
 import type { HonoEnv, CreateCardRequest, UpdateCardRequest, Card, UploadUrlRequest, GenerateQRRequest, ShareCardRequest } from '../types';
 import { 
   generateExchangeToken, 
   generateCardExchangeQRData,
+  cardImageUrl,
+  generateImageKey,
+  MAX_FILE_SIZE,
+  SUPPORTED_IMAGE_TYPES,
   validateCardName,
   validateCardLinks,
   validateFileName,
+  validateImageContentType,
   validateBio
 } from '../utils';
 
@@ -23,7 +29,7 @@ cards.post('/upload-url', authMiddleware, async (c) => {
     const { fileName, fileSize, contentType } = body;
 
     // バリデーション
-    if (!fileName || !fileSize) {
+    if (typeof fileName !== 'string' || !Number.isInteger(fileSize) || fileSize <= 0) {
       return c.json({
         success: false,
         error: 'fileName and fileSize are required',
@@ -38,8 +44,7 @@ cards.post('/upload-url', authMiddleware, async (c) => {
     }
 
     // ファイルサイズ制限 (10MB)
-    const maxFileSize = 10 * 1024 * 1024; // 10MB
-    if (fileSize > maxFileSize) {
+    if (fileSize > MAX_FILE_SIZE) {
       return c.json({
         success: false,
         error: 'File size too large. Maximum size is 10MB.',
@@ -47,27 +52,15 @@ cards.post('/upload-url', authMiddleware, async (c) => {
     }
 
     // 許可されたファイル形式
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (contentType && !allowedTypes.includes(contentType)) {
+    if (contentType && !validateImageContentType(contentType)) {
       return c.json({
         success: false,
         error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.',
       }, 400);
     }
 
-    // ファイル拡張子を取得
-    const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
-    if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
-      return c.json({
-        success: false,
-        error: 'Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed.',
-      }, 400);
-    }
-
     // ユニークなファイルキーを生成
-    const timestamp = Date.now();
-    const randomId = crypto.randomUUID().split('-')[0];
-    const fileKey = `cards/${currentUser.userId}/${timestamp}-${randomId}.${fileExtension}`;
+    const fileKey = generateImageKey(currentUser.userId, fileName);
 
     // R2への直接アップロードURLを生成
     // Cloudflare R2では、Workers環境でのアップロードは直接的に行う
@@ -78,8 +71,8 @@ cards.post('/upload-url', authMiddleware, async (c) => {
       success: true,
       data: {
         fileKey,
-        maxFileSize,
-        allowedTypes,
+        maxFileSize: MAX_FILE_SIZE,
+        allowedTypes: SUPPORTED_IMAGE_TYPES,
         expiresIn: 3600, // 1時間
         message: 'Use this fileKey to upload via POST /cards endpoint',
       },
@@ -97,15 +90,18 @@ cards.post('/upload-url', authMiddleware, async (c) => {
  * POST /cards/upload
  * 画像ファイルを直接R2にアップロード（要認証）
  */
-cards.post('/upload', authMiddleware, async (c) => {
+cards.post('/upload', authMiddleware, bodyLimit({
+  maxSize: MAX_FILE_SIZE + 64 * 1024, // multipart ヘッダーの分を確保
+  onError: (c) => c.json({ success: false, error: 'Upload is too large' }, 413),
+}), async (c) => {
   try {
     const currentUser = getCurrentUser(c);
     
     // multipart/form-data からファイルを取得
     const formData = await c.req.formData();
-    const file = formData.get('file') as File;
+    const file = formData.get('file');
     
-    if (!file) {
+    if (!(file instanceof File) || file.size === 0) {
       return c.json({
         success: false,
         error: 'No file provided',
@@ -113,8 +109,7 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // ファイルサイズ制限 (10MB)
-    const maxFileSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxFileSize) {
+    if (file.size > MAX_FILE_SIZE) {
       return c.json({
         success: false,
         error: 'File size too large. Maximum size is 10MB.',
@@ -122,8 +117,7 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // 許可されたファイル形式
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    if (!validateImageContentType(file.type)) {
       return c.json({
         success: false,
         error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.',
@@ -131,8 +125,7 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // ファイル拡張子を取得
-    const fileExtension = file.name.split('.').pop()?.toLowerCase() || '';
-    if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
+    if (!validateFileName(file.name)) {
       return c.json({
         success: false,
         error: 'Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed.',
@@ -140,15 +133,11 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // ユニークなファイルキーを生成
-    const timestamp = Date.now();
-    const randomId = crypto.randomUUID().split('-')[0];
-    const fileKey = `cards/${currentUser.userId}/${timestamp}-${randomId}.${fileExtension}`;
-
-    // ファイルをArrayBufferに変換
-    const arrayBuffer = await file.arrayBuffer();
+    const fileKey = generateImageKey(currentUser.userId, file.name);
+    const uploadedAt = new Date();
     
     // R2にファイルをアップロード
-    await c.env.R2.put(fileKey, arrayBuffer, {
+    await c.env.R2.put(fileKey, file, {
       httpMetadata: {
         contentType: file.type,
         cacheControl: 'public, max-age=31536000', // 1年間キャッシュ
@@ -156,7 +145,7 @@ cards.post('/upload', authMiddleware, async (c) => {
       customMetadata: {
         'uploaded-by': currentUser.userId,
         'original-name': file.name,
-        'upload-timestamp': timestamp.toString(),
+        'upload-timestamp': uploadedAt.getTime().toString(),
       },
     });
 
@@ -168,7 +157,7 @@ cards.post('/upload', authMiddleware, async (c) => {
         originalName: file.name,
         size: file.size,
         type: file.type,
-        uploadedAt: new Date(timestamp).toISOString(),
+        uploadedAt: uploadedAt.toISOString(),
       },
     }, 201);
   } catch (error) {
@@ -271,7 +260,7 @@ cards.post('/', authMiddleware, async (c) => {
       'SELECT * FROM cards WHERE id = ?'
     ).bind(cardId).first() as Card;
 
-    const imageUrl = createdCard.image_key ? `/cards/image/${createdCard.image_key}` : null;
+    const imageUrl = cardImageUrl(createdCard.image_key);
 
     return c.json({
       success: true,
@@ -304,7 +293,7 @@ cards.get('/', authMiddleware, async (c) => {
     ).bind(currentUser.userId).all();
 
     const cardsWithParsedLinks = userCards.results.map((card: any) => {
-      const imageUrl = card.image_key ? `/cards/image/${card.image_key}` : null;
+      const imageUrl = cardImageUrl(card.image_key);
 
       return {
         ...card,
@@ -420,7 +409,7 @@ cards.put('/:id', authMiddleware, async (c) => {
       'SELECT * FROM cards WHERE id = ?'
     ).bind(cardId).first() as Card;
 
-    const imageUrl = updatedCard.image_key ? `/cards/image/${updatedCard.image_key}` : null;
+    const imageUrl = cardImageUrl(updatedCard.image_key);
 
     return c.json({
       success: true,
@@ -899,7 +888,7 @@ cards.get('/public/:id', async (c) => {
       }, 404);
     }
 
-    const imageUrl = card.image_key ? `/cards/image/${card.image_key}` : null;
+    const imageUrl = cardImageUrl(card.image_key);
 
     return c.json({
       success: true,

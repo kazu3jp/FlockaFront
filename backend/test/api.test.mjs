@@ -77,6 +77,8 @@ before(async () => {
     .bind(user.id, user.email.toUpperCase(), bcrypt.hashSync(user.password, 4)).run();
   await db.prepare('INSERT INTO cards (id, user_id, card_name, image_key) VALUES (?, ?, ?, ?)')
     .bind('legacy-card', user.id, 'Legacy card', 'cards/legacy-user/image.png').run();
+  await db.prepare('INSERT INTO exchanges (id, owner_user_id, collected_card_id) VALUES (?, ?, ?)')
+    .bind('legacy-exchange', user.id, 'legacy-card').run();
   await applyMigration(db, '0002_better_auth.sql');
   const r2 = await worker.getR2Bucket('R2');
   await r2.put('cards/legacy-user/image.png', 'legacy image data', { httpMetadata: { contentType: 'image/png' } });
@@ -124,10 +126,34 @@ test('migration retains the legacy password, user ID, card and R2 image', async 
   assert.equal(image.status, 200);
   assert.equal(image.headers.get('content-type'), 'image/png');
   assert.equal(await image.text(), 'legacy image data');
+  const exchange = await request('/exchanges/legacy-exchange', { headers });
+  assert.equal(exchange.status, 200);
+  const { data } = await exchange.json();
+  assert.equal(new URL(data.card.image_url).pathname, '/cards/image/cards/legacy-user/image.png');
   const logs = await request('/exchanges/qr-logs', { headers });
   assert.equal(logs.status, 200);
   assert.deepEqual((await logs.json()).data, { logs: [], total: 0, newLogs: 0 });
   assert.equal((await request('/exchanges/unknown-id', { headers })).status, 404);
+});
+
+test('card image uploads use the same R2 binding as downloads', async () => {
+  const { token } = await login(user.email, user.password);
+  const form = new FormData();
+  form.set('file', new File(['uploaded bytes'], 'card.PNG', { type: 'image/png' }));
+  const multipart = new Response(form);
+  const upload = await request('/cards/upload', {
+    method: 'POST',
+    body: await multipart.arrayBuffer(),
+    headers: { ...authorization(token), 'Content-Type': multipart.headers.get('content-type') },
+  });
+  assert.equal(upload.status, 201);
+  const { data } = await upload.json();
+  assert.match(data.fileKey, /^cards\/legacy-user\/.+\.png$/);
+
+  const image = await request(`/cards/image/${data.fileKey}`);
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get('content-type'), 'image/png');
+  assert.equal(await image.text(), 'uploaded bytes');
 });
 
 test('only valid sessions are accepted and logout invalidates the session', async () => {

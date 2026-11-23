@@ -36,8 +36,9 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 `/auth` はExpoクライアントの既存形式を維持するためのルートです。認証は `/api/auth/*` にマウントした Better Auth が処理します。
 
 カード管理（`/cards`）
-- `POST /upload-url` — 署名付きアップロードURL生成
-- `POST /upload-file` — 直接ファイルアップロード
+- `POST /upload-url` — 旧クライアント向けのアップロード情報（署名付きURLではありません）
+- `POST /upload` — Worker経由でR2に画像をアップロード
+- `GET /image/*` — R2のカード画像を取得
 - `POST /` — カード作成
 - `GET /` — 所有カード一覧取得
 - `GET /:id` — カード詳細取得
