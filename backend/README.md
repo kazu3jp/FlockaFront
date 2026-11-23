@@ -83,6 +83,8 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 
 ## 開発・デプロイ
 
+`src/index.ts` はWorkerの入口、`src/app.ts` はHonoアプリの組み立てを担います。共通のHTTP処理と認証処理は `src/middleware/`、機能別のルートは `src/routes/` にあります。アカウント情報の取得・削除は `/auth/me` と `/users/me` の両方で利用できます。
+
 ローカル開発のコマンドは `backend/` で実行します。
 
 ```bash
@@ -96,7 +98,9 @@ npm run dev
 
 ```bash
 npm run type-check
-npm run build
+npm test
 ```
+
+`npm test` はWorkerをドライランでビルドし、Miniflareの一時D1を使ってAPIを検証します。本番リソースやメール配信サービスには接続しません。`wrangler.local.jsonc` または `.dev.vars.example` のバインディングを変更したら、`npm run types:generate` で型を再生成してください。
 
 本番デプロイには、対象環境の `wrangler.toml` を `backend/` に配置してから `npm run deploy` を実行します。

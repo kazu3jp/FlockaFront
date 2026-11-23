@@ -1,5 +1,3 @@
-import type { Env } from '../types';
-
 /**
  * 簡素化されたメール送信機能
  * MailChannels Email APIを使用

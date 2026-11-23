@@ -1,16 +1,5 @@
-// Cloudflare Workers環境の型定義
-
-export interface Env {
-  DB: D1Database;
-  R2: R2Bucket;
-  JWT_SECRET: string;
-  ENVIRONMENT: string;
-  MAILCHANNELS_API_KEY: string;
-  [key: string]: unknown;
-}
-
 export interface HonoEnv {
-  Bindings: Env;
+  Bindings: WorkerBindings;
   Variables: {
     user?: JWTPayload;
   };

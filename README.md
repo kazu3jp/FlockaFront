@@ -15,7 +15,7 @@ Flocka は、趣味やコミュニティごとに使い分けられる電子名�
 
 ## ローカル開発
 
-Node.js 22 と npm を使用します。以下のコマンドはリポジトリのルートで実行します。
+Node.js 22（22.12 以降）と npm を使用します。以下のコマンドはリポジトリのルートで実行します。
 
 ```bash
 npm --prefix frontend ci
@@ -39,7 +39,7 @@ npm --prefix frontend start
 ```bash
 npm --prefix frontend run lint
 npm --prefix backend run type-check
-npm --prefix backend run build
+npm --prefix backend test
 ```
 
 ## コミットとプルリクエスト
