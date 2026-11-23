@@ -109,6 +109,19 @@ npm test
 
 `npm test` はWorkerをドライランでビルドし、Miniflareの一時D1を使ってAPIを検証します。本番リソースやメール配信サービスには接続しません。`wrangler.local.jsonc` または `.dev.vars.example` のバインディングを変更したら、`npm run types:generate` で型を再生成してください。
 
+### `ecc-flocka.api.zofax.net` へのデプロイ
+
+[`wrangler.zofax.jsonc`](wrangler.zofax.jsonc) は新しいWorker `flocka-api-zofax` と専用のD1・R2を使います。旧Worker `flocka-api` とそのデータは切り替えません。Expoから接続するには `EXPO_PUBLIC_API_URL=https://ecc-flocka.api.zofax.net` を設定します。
+
+```bash
+npx wrangler d1 migrations apply DB --remote --config wrangler.zofax.jsonc
+npm run deploy -- --config wrangler.zofax.jsonc
+```
+
+Resendの実配信を有効にするには、認証済みの送信元を `wrangler.zofax.jsonc` の `vars.RESEND_FROM_EMAIL` に追加し、`npx wrangler secret put RESEND_API_KEY --config wrangler.zofax.jsonc` で送信用キーを登録します。
+
+### 旧環境を移行する場合
+
 公開環境では `DB`・`R2` バインディングに加え、`ENVIRONMENT=production`、公開HTTPSの `BETTER_AUTH_URL`、認証済みの送信元 `RESEND_FROM_EMAIL`、必要に応じて `AUTH_TRUSTED_ORIGINS` を設定します。`BETTER_AUTH_SECRET` と `RESEND_API_KEY` は Workers のシークレットに登録します。APIとメール送信元は別ドメインで構いません。例えば、検証用Workerの `workers.dev` URL をAPIに使い、別途Resendで認証したドメインからメールを送れます。
 
 既存環境を切り替える場合は、D1をバックアップして検証環境でマイグレーションを確認してから、旧Workerへの書き込みを止めます。本番設定でD1の `migrations_dir` を `db/migrations` に指定し、`npx wrangler d1 migrations apply DB --remote --config wrangler.toml` を実行してから `npm run deploy` で新Workerに切り替えます。この移行は旧Workerとの同時稼働には対応しません。
