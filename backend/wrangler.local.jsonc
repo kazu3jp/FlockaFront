@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "flocka-api-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "flocka-db",
+      "database_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "flocka-storage-local"
+    }
+  ]
+}

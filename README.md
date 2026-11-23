@@ -1,56 +1,58 @@
 # Flocka　(フロッカ)
 
-Flocka のクライアントアプリ（Expo + React Native）。
+Flocka は、趣味やコミュニティごとに使い分けられる電子名刺（プロフィールカード）を交換できるモバイルアプリです。このリポジトリでアプリとAPIを一緒に管理します。
 
-![Flocka App Screenshot](img/Flocka.jpg)
-
-## 概要
-
-Flocka は、趣味やコミュニティごとに使い分けられる電子名刺（プロフィールカード）を交換できるモバイルアプリです。本リポジトリはフロントエンド（React Native / Expo）で、バックエンドは `FlockaAPI` を参照します。
+![Flocka App Screenshot](frontend/img/Flocka.jpg)
 
 | | | |
 | --- | --- | --- |
-| <img src="img/Flocka_ホーム.jpg" alt="Flocka Home" width="200" /> | <img src="img/Flocka_コレクション.jpg" alt="Flocka Collection" width="200" /> | <img src="img/Flocka_詳細.jpg" alt="Flocka Detail" width="200" /> |
+| <img src="frontend/img/Flocka_ホーム.jpg" alt="Flocka Home" width="200" /> | <img src="frontend/img/Flocka_コレクション.jpg" alt="Flocka Collection" width="200" /> | <img src="frontend/img/Flocka_詳細.jpg" alt="Flocka Detail" width="200" /> |
 
-## 主要技術
+## リポジトリ構成
 
-- Expo Router (app ディレクトリ)
-- React Native + TypeScript
-- Expo 向け各種モジュール（Camera、SecureStore、QRCode など）
+- [`frontend/`](frontend/) は Expo Router、React Native、TypeScript のアプリです。
+- [`backend/`](backend/README.md) は Cloudflare Workers、Hono、D1、R2 のAPIです。
 
-## 必要環境
+## ローカル開発
 
-- Node.js（推奨: 18.x 以上）
-- npm
-- （任意）Expo CLI: `npm install -g expo-cli`（`npx expo` で代用可）
+Node.js 22 と npm を使用します。以下のコマンドはリポジトリのルートで実行します。
 
-## セットアップ（開発）
+```bash
+npm --prefix frontend ci
+npm --prefix backend ci
+cp backend/.dev.vars.example backend/.dev.vars
+cp frontend/.env.example frontend/.env.local
+npm --prefix backend run db:init
+npm --prefix backend run dev
+```
 
-1. 依存関係のインストール
+APIが `http://127.0.0.1:8787/` で起動したら、別のターミナルでアプリを起動します。
 
-   ```bash
-   npm install
-   ```
+```bash
+npm --prefix frontend start
+```
 
-2. 開発サーバを起動
+`frontend/.env.local` の `EXPO_PUBLIC_API_URL` には、アプリを実行する端末から到達できるURLを設定します。Androidエミュレーターでは `http://10.0.2.2:8787` を指定します。実機では開発PCのLANアドレスを指定し、APIを `npm --prefix backend run dev -- --ip 0.0.0.0` で起動します。変数が未設定の場合、アプリは `https://api.flocka.net` に接続します。
 
-   ```bash
-   npm run start
-   ```
+## 検証
 
-3. 実機／エミュレータで確認
+```bash
+npm --prefix frontend run lint
+npm --prefix backend run type-check
+npm --prefix backend run build
+```
 
-   - Expo Go（※一部ネイティブ機能は制限あり）
-   - iOS シミュレータ / Android エミュレータ
+## コミットとプルリクエスト
 
-## 主要スクリプト
+コミットの1行目とPRタイトルには [Conventional Commits 1.0.0](https://www.conventionalcommits.org/ja/v1.0.0/) の形式を使います。例として `fix(backend): カード交換履歴の取得を修正` のように記述します。スコープは任意です。
 
-- `npm run start` — Expo 開発サーバ起動
-- `npm run android` — Android で起動
-- `npm run ios` — iOS シミュレータで起動
-- `npm run web` — Web で起動（React Native Web）
-- `npm run lint` — ESLint を実行
-- `npm run reset-project` — プロジェクト初期化スクリプト
+コミット用テンプレートを有効にするには、クローンごとにリポジトリのルートで次を実行します。
+
+```bash
+git config --local commit.template .gitmessage
+```
+
+`git commit` でエディタを開くと記入ガイドが表示されます。GitHubでは、新規PRの本文に [PRテンプレート](.github/pull_request_template.md) が表示されます。
 
 ## 主要な画面と機能
 

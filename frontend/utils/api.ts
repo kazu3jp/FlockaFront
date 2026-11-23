@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = 'https://api.flocka.net';
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://api.flocka.net').replace(/\/+$/, '');
 
 interface ApiResponse<T = any> {
   success: boolean;

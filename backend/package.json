@@ -1,0 +1,29 @@
+{
+  "name": "flocka-api",
+  "version": "1.2.0",
+  "description": "Flocka - デジタルプロフィールカード交換アプリのバックエンドAPI",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.local.jsonc --local",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --config wrangler.local.jsonc --dry-run --outdir dist",
+    "type-check": "tsc --noEmit",
+    "db:init": "wrangler d1 execute flocka-db --config wrangler.local.jsonc --local --file=./db/schema.sql",
+    "db:generate": "wrangler d1 execute flocka-db --file=./db/schema.sql",
+    "db:migrate": "wrangler d1 migrations apply flocka-db"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.2.1",
+    "bcryptjs": "^2.4.3",
+    "hono": "^3.12.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
+    "typescript": "^5.3.3",
+    "wrangler": "^4.33.1"
+  }
+}
