@@ -1,84 +1,114 @@
-import { apiClient } from '@/utils/api';
+import { CardPreviewSection } from '@/components/card/CardPreviewSection';
+import {
+  hasUrlBody,
+  MAX_CARD_LINKS,
+  normalizeLinkInput,
+  removeLinkAt,
+  withUrlScheme,
+} from '@/components/card/cardLinks';
+import { useInputLinksParams } from '@/components/card/cardUploadFlow';
+import { FlowNavButtons } from '@/components/form/FlowNavButtons';
+import { FormTextInput } from '@/components/form/FormTextInput';
+import { KeyboardDismissScrollView } from '@/components/layout/KeyboardDismissScrollView';
+import { showInputError } from '@/utils/alert';
+import { apiClient, type CardLink } from '@/utils/api';
+import { getErrorMessage } from '@/utils/errors';
 import Entypo from '@expo/vector-icons/Entypo';
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, TouchableWithoutFeedback, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 
-type InputData = {
-  sns: string;
-  link: string;
-};
+/** 追加済みリンクの1行 */
+function AddedLinkItem({ link, onRemove }: { link: CardLink; onRemove: () => void }) {
+  return (
+    <View className="flex-row items-center gap-2 mb-3 p-3 bg-gray-50 rounded-lg">
+      <View className="flex-1">
+        <Text className="text-sm font-medium text-gray-700">{link.title}</Text>
+        <Text className="text-xs text-gray-500 mt-1" numberOfLines={1}>{link.url}</Text>
+      </View>
+      <Pressable onPress={onRemove} className="p-2">
+        <Entypo name="cross" size={16} color="#ef4444" />
+      </Pressable>
+    </View>
+  );
+}
 
-export default function InputLinks() {
-  const { imageUri, name, bio } = useLocalSearchParams<{ 
-    imageUri: string;
-    name: string;
-    bio: string;
-  }>();
+/** 新しいリンクを追加するフォーム */
+function NewLinkForm({ onAdd }: { onAdd: (link: CardLink) => boolean }) {
   const [sns, setSns] = useState<string>("");
   const [link, setLink] = useState<string>("");
-  const [datas, setDatas] = useState<InputData[]>([]);
+  const addDisabled = !sns.trim() || !link.trim() || link.trim().length <= 3;
+
+  const handleAdd = () => {
+    if (onAdd({ title: sns, url: link })) {
+      setSns("");
+      setLink("");
+    }
+  };
+
+  return (
+    <View className="mt-4">
+      <Text className="text-sm font-medium text-gray-700 mb-2">新しいリンクを追加</Text>
+      <View className="gap-3">
+        <FormTextInput
+          placeholder="SNS名 (例: Instagram, Twitter)"
+          value={sns}
+          onChangeText={setSns}
+          autoCapitalize="none"
+        />
+        <FormTextInput
+          placeholder="instagram.com/username"
+          value={link}
+          // 入力中は https:// を強制しない（http:// だけ https:// に置き換える）
+          onChangeText={(text) => setLink(normalizeLinkInput(text))}
+          // 何も入力されていない場合のみ https:// を設定
+          onFocus={() => {
+            if (link === '') setLink('https://');
+          }}
+          autoCapitalize="none"
+          keyboardType="url"
+        />
+        <Text className="text-xs text-gray-500 -mt-2">※ https://で始まるURLのみ対応</Text>
+        <Pressable
+          onPress={handleAdd}
+          className="p-3 bg-gray-600 rounded-lg items-center"
+          disabled={addDisabled}
+          style={{ opacity: addDisabled ? 0.5 : 1 }}
+        >
+          <Text className="text-white font-medium">リンクを追加</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+export default function InputLinks() {
+  const { imageUri, name, bio } = useInputLinksParams();
+  const [links, setLinks] = useState<CardLink[]>([]);
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  const isFull = links.length >= MAX_CARD_LINKS;
 
-  // 名刺の標準サイズ（91mm × 55mm）
-  const CARD_ASPECT_RATIO = 91 / 55; // 約1.65:1
-
-  // URL入力のハンドラー - 入力中は https:// を強制しない
-  const handleLinkChange = (text: string) => {
-    // http:// を https:// に置換するだけ、それ以外はそのまま受け取る
-    if (text.startsWith('http://')) {
-      setLink('https://' + text.substring(7));
-    } else {
-      setLink(text);
-    }
-  };
-
-  // URL初期化時にhttps://を設定（何も入力されていない場合のみ）
-  const initializeLink = () => {
-    if (link === '') {
-      setLink('https://');
-    }
-  };
-
-  const handleSetValue = () => {
-    if (datas.length >= 4) {
+  /** リンクを追加する。入力エラーでアラートを出した場合は false を返す */
+  const handleAddLink = ({ title, url }: CardLink): boolean => {
+    if (isFull) {
       Alert.alert("制限エラー", "リンクは最大4つまでです。");
-      return;
+      return false;
     }
-    if (!sns.trim() || !link.trim()) {
-      Alert.alert("入力エラー", "SNS名とURLの両方を入力してください。");
-      return;
+    if (!title.trim() || !url.trim()) {
+      showInputError("SNS名とURLの両方を入力してください。");
+      return false;
     }
-    
+
     // 追加時にスキームがなければ https:// を自動付与する
-    let finalLink = link.trim();
-    if (!finalLink.startsWith('http://') && !finalLink.startsWith('https://')) {
-      finalLink = 'https://' + finalLink;
-    }
-
-    // https:// または http:// で始まっているかチェック
-    if (!finalLink.startsWith('https://') && !finalLink.startsWith('http://')) {
-      Alert.alert("URLエラー", "URLはhttps://またはhttp://で始まる必要があります。");
-      return;
-    }
-    
+    const finalUrl = withUrlScheme(url);
     // https:// のあとに実際のURLがあるかチェック
-    if (finalLink === 'https://' || finalLink === 'http://' || finalLink.length <= 8) {
+    if (!hasUrlBody(finalUrl)) {
       Alert.alert("URLエラー", "有効なURLを入力してください。");
-      return;
+      return false;
     }
-    
-    const newDatas = [...datas, { sns, link: finalLink }];
-    setDatas(newDatas);
-    console.log(newDatas);
 
-    setSns("");
-    setLink("");
-  };
-
-  const removeLink = (index: number) => {
-    const newDatas = datas.filter((_, i) => i !== index);
-    setDatas(newDatas);
+    setLinks([...links, { title, url: finalUrl }]);
+    return true;
   };
 
   const handleCreateCard = async () => {
@@ -86,7 +116,6 @@ export default function InputLinks() {
       Alert.alert("エラー", "名前が設定されていません。");
       return;
     }
-    
     if (!imageUri) {
       Alert.alert("エラー", "画像が選択されていません。");
       return;
@@ -96,41 +125,25 @@ export default function InputLinks() {
 
     try {
       // 1. 画像をアップロード
-      console.log('画像をアップロード中...');
       const { imageKey } = await apiClient.uploadImage(imageUri);
-      console.log('画像アップロード完了:', imageKey);
 
       // 2. カードを作成
-      console.log('カードを作成中...');
-      const cardData = {
+      await apiClient.createCard({
         card_name: name.trim(),
         bio: bio?.trim() || "",
         image_key: imageKey,
-        links: datas.map(data => ({
-          title: data.sns,
-          url: data.link
-        }))
-      };
+        links,
+      });
 
-      const newCard = await apiClient.createCard(cardData);
-      console.log('カード作成完了:', newCard);
-
-      // 3. 成功メッセージと画面遷移
+      // 3. 成功メッセージと画面遷移（ホーム画面に戻る）
       Alert.alert("完了", "名刺が作成されました！", [
-        { 
-          text: "OK", 
-          onPress: () => {
-            // ホーム画面に戻る
-            router.push("/(tabs)/home");
-          }
-        }
+        { text: "OK", onPress: () => router.push("/(tabs)/home") }
       ]);
-
     } catch (error) {
       console.error('カード作成エラー:', error);
       Alert.alert(
-        "エラー", 
-        error instanceof Error ? error.message : "名刺の作成に失敗しました。もう一度お試しください。"
+        "エラー",
+        getErrorMessage(error, "名刺の作成に失敗しました。もう一度お試しください。")
       );
     } finally {
       setIsCreating(false);
@@ -138,158 +151,51 @@ export default function InputLinks() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 20}
-      enabled={true}
-    >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <ScrollView 
-          className="flex-1 bg-gray-50" 
-          keyboardShouldPersistTaps="handled" 
-          contentContainerStyle={{ 
-            flexGrow: 1,
-            paddingBottom: Platform.OS === 'ios' ? 20 : 0 
-          }}
-          showsVerticalScrollIndicator={false}
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : undefined}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios' ? true : false}
-        >
-          <View className="p-4">
-        {/* 名刺プレビュー */}
-        <View className="mb-6">
-          <Text className="text-lg font-semibold mb-3">名刺プレビュー</Text>
-          <View className="items-center">
-            {imageUri ? (
-              <Image
-                source={{ uri: imageUri }}
-                className="border border-gray-300 rounded-lg shadow-sm"
-                style={{ 
-                  width: 280, 
-                  height: Math.round(280 / CARD_ASPECT_RATIO), // 名刺比率を維持
-                  aspectRatio: CARD_ASPECT_RATIO 
-                }}
-                resizeMode="cover"
-              />
-            ) : (
-              <View 
-                className="bg-gray-100 border border-gray-300 rounded-lg items-center justify-center"
-                style={{ 
-                  width: 280, 
-                  height: Math.round(280 / CARD_ASPECT_RATIO),
-                }}
-              >
-                <Text className="text-gray-400">名刺画像</Text>
-              </View>
-            )}
-          </View>
-          
+    <KeyboardDismissScrollView>
+      <View className="p-4">
+        <CardPreviewSection imageUri={imageUri}>
           {/* 基本情報表示 */}
           <View className="mt-4 p-3 bg-white rounded-lg">
             <Text className="text-sm font-medium text-gray-700">名前: {name}</Text>
-            {bio && <Text className="text-xs text-gray-600 mt-1">自己紹介: {bio}</Text>}
+            {!!bio && <Text className="text-xs text-gray-600 mt-1">自己紹介: {bio}</Text>}
           </View>
-        </View>
+        </CardPreviewSection>
 
         {/* SNSリンク設定部分 */}
         <View className="bg-white rounded-lg p-4 shadow-sm">
           <Text className="text-lg font-semibold mb-4">SNSリンク設定</Text>
-          <Text className="text-sm text-gray-600 mb-4">最大4つまでリンクを追加できます ({datas.length}/4)</Text>
-          
-          {/* 既に追加されたリンク */}
-          {datas.map((data, index) => (
-            <View key={index} className="flex-row items-center gap-2 mb-3 p-3 bg-gray-50 rounded-lg">
-              <View className="flex-1">
-                <Text className="text-sm font-medium text-gray-700">{data.sns}</Text>
-                <Text className="text-xs text-gray-500 mt-1" numberOfLines={1}>{data.link}</Text>
-              </View>
-              <Pressable
-                onPress={() => removeLink(index)}
-                className="p-2"
-              >
-                <Entypo name="cross" size={16} color="#ef4444" />
-              </Pressable>
-            </View>
+          <Text className="text-sm text-gray-600 mb-4">
+            最大4つまでリンクを追加できます ({links.length}/{MAX_CARD_LINKS})
+          </Text>
+
+          {links.map((link, index) => (
+            <AddedLinkItem
+              key={index}
+              link={link}
+              onRemove={() => setLinks(removeLinkAt(links, index))}
+            />
           ))}
-          
-          {/* 新しいリンクを追加するフォーム */}
-          {datas.length < 4 && (
-            <View className="mt-4">
-              <Text className="text-sm font-medium text-gray-700 mb-2">新しいリンクを追加</Text>
-              <View className="gap-3">
-                <TextInput
-                  placeholder="SNS名 (例: Instagram, Twitter)"
-                  value={sns}
-                  onChangeText={setSns}
-                  className="border border-gray-300 rounded-lg px-3 py-3 text-base bg-white"
-                  autoCapitalize="none"
-                />
-                <TextInput
-                  placeholder="instagram.com/username"
-                  value={link}
-                  onChangeText={handleLinkChange}
-                  onFocus={initializeLink}
-                  className="border border-gray-300 rounded-lg px-3 py-3 text-base bg-white"
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
-                <Text className="text-xs text-gray-500 -mt-2">※ https://で始まるURLのみ対応</Text>
-                <Pressable
-                  onPress={handleSetValue}
-                  className="p-3 bg-gray-600 rounded-lg items-center"
-                  disabled={!sns.trim() || !link.trim() || link.trim().length <= 3}
-                  style={{
-                    opacity: (!sns.trim() || !link.trim() || link.trim().length <= 3) ? 0.5 : 1
-                  }}
-                >
-                  <Text className="text-white font-medium">リンクを追加</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-          
-          {datas.length >= 4 && (
+
+          {isFull ? (
             <View className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <Text className="text-amber-700 text-sm text-center">リンクは最大4つまでです</Text>
             </View>
+          ) : (
+            <NewLinkForm onAdd={handleAddLink} />
           )}
         </View>
       </View>
 
-      {/* ナビゲーションボタン */}
-      <View className="flex-row gap-4 p-4 pb-8">
-        <Pressable
-          onPress={() => router.back()}
-          className="flex-1 py-3 rounded-lg bg-white border border-gray-300 items-center justify-center"
-          disabled={isCreating}
-          style={{
-            opacity: isCreating ? 0.5 : 1
-          }}
-        >
-          <Text className="text-lg font-medium text-gray-700">戻る</Text>
-        </Pressable>
-        <Pressable
-          onPress={handleCreateCard}
-          className="flex-1 py-3 rounded-lg bg-black items-center justify-center"
-          disabled={isCreating}
-          style={{
-            opacity: isCreating ? 0.7 : 1
-          }}
-        >
-          <View className="flex-row items-center">
-            {isCreating && (
-              <ActivityIndicator size="small" color="white" style={{ marginRight: 8 }} />
-            )}
-            <Text className="text-lg font-bold text-white">
-              {isCreating ? "作成中..." : "名刺を作成"}
-            </Text>
-          </View>
-        </Pressable>
-      </View>
-    </ScrollView>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+      <FlowNavButtons
+        onBack={() => router.back()}
+        onNext={handleCreateCard}
+        nextLabel="名刺を作成"
+        loadingLabel="作成中..."
+        loading={isCreating}
+        nextDisabled={isCreating}
+        nextDisabledOpacity={0.7}
+        backDisabled={isCreating}
+      />
+    </KeyboardDismissScrollView>
   );
 }

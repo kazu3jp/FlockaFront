@@ -1,13 +1,19 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { html } from 'hono/html';
 import { authMiddleware, getCurrentUser } from '../middleware/auth';
 import type { HonoEnv, CreateCardRequest, UpdateCardRequest, Card, UploadUrlRequest, GenerateQRRequest, ShareCardRequest } from '../types';
 import { 
   generateExchangeToken, 
   generateCardExchangeQRData,
-  generateCardShareURL,
+  cardImageUrl,
+  generateImageKey,
+  MAX_FILE_SIZE,
+  SUPPORTED_IMAGE_TYPES,
   validateCardName,
   validateCardLinks,
   validateFileName,
+  validateImageContentType,
   validateBio
 } from '../utils';
 
@@ -24,7 +30,7 @@ cards.post('/upload-url', authMiddleware, async (c) => {
     const { fileName, fileSize, contentType } = body;
 
     // バリデーション
-    if (!fileName || !fileSize) {
+    if (typeof fileName !== 'string' || !Number.isInteger(fileSize) || fileSize <= 0) {
       return c.json({
         success: false,
         error: 'fileName and fileSize are required',
@@ -39,8 +45,7 @@ cards.post('/upload-url', authMiddleware, async (c) => {
     }
 
     // ファイルサイズ制限 (10MB)
-    const maxFileSize = 10 * 1024 * 1024; // 10MB
-    if (fileSize > maxFileSize) {
+    if (fileSize > MAX_FILE_SIZE) {
       return c.json({
         success: false,
         error: 'File size too large. Maximum size is 10MB.',
@@ -48,27 +53,15 @@ cards.post('/upload-url', authMiddleware, async (c) => {
     }
 
     // 許可されたファイル形式
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (contentType && !allowedTypes.includes(contentType)) {
+    if (contentType && !validateImageContentType(contentType)) {
       return c.json({
         success: false,
         error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.',
       }, 400);
     }
 
-    // ファイル拡張子を取得
-    const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
-    if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
-      return c.json({
-        success: false,
-        error: 'Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed.',
-      }, 400);
-    }
-
     // ユニークなファイルキーを生成
-    const timestamp = Date.now();
-    const randomId = crypto.randomUUID().split('-')[0];
-    const fileKey = `cards/${currentUser.userId}/${timestamp}-${randomId}.${fileExtension}`;
+    const fileKey = generateImageKey(currentUser.userId, fileName);
 
     // R2への直接アップロードURLを生成
     // Cloudflare R2では、Workers環境でのアップロードは直接的に行う
@@ -79,8 +72,8 @@ cards.post('/upload-url', authMiddleware, async (c) => {
       success: true,
       data: {
         fileKey,
-        maxFileSize,
-        allowedTypes,
+        maxFileSize: MAX_FILE_SIZE,
+        allowedTypes: SUPPORTED_IMAGE_TYPES,
         expiresIn: 3600, // 1時間
         message: 'Use this fileKey to upload via POST /cards endpoint',
       },
@@ -98,15 +91,18 @@ cards.post('/upload-url', authMiddleware, async (c) => {
  * POST /cards/upload
  * 画像ファイルを直接R2にアップロード（要認証）
  */
-cards.post('/upload', authMiddleware, async (c) => {
+cards.post('/upload', authMiddleware, bodyLimit({
+  maxSize: MAX_FILE_SIZE + 64 * 1024, // multipart ヘッダーの分を確保
+  onError: (c) => c.json({ success: false, error: 'Upload is too large' }, 413),
+}), async (c) => {
   try {
     const currentUser = getCurrentUser(c);
     
     // multipart/form-data からファイルを取得
     const formData = await c.req.formData();
-    const file = formData.get('file') as File;
+    const file = formData.get('file');
     
-    if (!file) {
+    if (!(file instanceof File) || file.size === 0) {
       return c.json({
         success: false,
         error: 'No file provided',
@@ -114,8 +110,7 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // ファイルサイズ制限 (10MB)
-    const maxFileSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxFileSize) {
+    if (file.size > MAX_FILE_SIZE) {
       return c.json({
         success: false,
         error: 'File size too large. Maximum size is 10MB.',
@@ -123,8 +118,7 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // 許可されたファイル形式
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    if (!validateImageContentType(file.type)) {
       return c.json({
         success: false,
         error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.',
@@ -132,8 +126,7 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // ファイル拡張子を取得
-    const fileExtension = file.name.split('.').pop()?.toLowerCase() || '';
-    if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
+    if (!validateFileName(file.name)) {
       return c.json({
         success: false,
         error: 'Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed.',
@@ -141,15 +134,11 @@ cards.post('/upload', authMiddleware, async (c) => {
     }
 
     // ユニークなファイルキーを生成
-    const timestamp = Date.now();
-    const randomId = crypto.randomUUID().split('-')[0];
-    const fileKey = `cards/${currentUser.userId}/${timestamp}-${randomId}.${fileExtension}`;
-
-    // ファイルをArrayBufferに変換
-    const arrayBuffer = await file.arrayBuffer();
+    const fileKey = generateImageKey(currentUser.userId, file.name);
+    const uploadedAt = new Date();
     
     // R2にファイルをアップロード
-    await c.env.R2.put(fileKey, arrayBuffer, {
+    await c.env.R2.put(fileKey, file, {
       httpMetadata: {
         contentType: file.type,
         cacheControl: 'public, max-age=31536000', // 1年間キャッシュ
@@ -157,7 +146,7 @@ cards.post('/upload', authMiddleware, async (c) => {
       customMetadata: {
         'uploaded-by': currentUser.userId,
         'original-name': file.name,
-        'upload-timestamp': timestamp.toString(),
+        'upload-timestamp': uploadedAt.getTime().toString(),
       },
     });
 
@@ -169,7 +158,7 @@ cards.post('/upload', authMiddleware, async (c) => {
         originalName: file.name,
         size: file.size,
         type: file.type,
-        uploadedAt: new Date(timestamp).toISOString(),
+        uploadedAt: uploadedAt.toISOString(),
       },
     }, 201);
   } catch (error) {
@@ -272,7 +261,7 @@ cards.post('/', authMiddleware, async (c) => {
       'SELECT * FROM cards WHERE id = ?'
     ).bind(cardId).first() as Card;
 
-    const imageUrl = createdCard.image_key ? `/cards/image/${createdCard.image_key}` : null;
+    const imageUrl = cardImageUrl(createdCard.image_key);
 
     return c.json({
       success: true,
@@ -305,7 +294,7 @@ cards.get('/', authMiddleware, async (c) => {
     ).bind(currentUser.userId).all();
 
     const cardsWithParsedLinks = userCards.results.map((card: any) => {
-      const imageUrl = card.image_key ? `/cards/image/${card.image_key}` : null;
+      const imageUrl = cardImageUrl(card.image_key);
 
       return {
         ...card,
@@ -421,7 +410,7 @@ cards.put('/:id', authMiddleware, async (c) => {
       'SELECT * FROM cards WHERE id = ?'
     ).bind(cardId).first() as Card;
 
-    const imageUrl = updatedCard.image_key ? `/cards/image/${updatedCard.image_key}` : null;
+    const imageUrl = cardImageUrl(updatedCard.image_key);
 
     return c.json({
       success: true,
@@ -526,12 +515,13 @@ cards.post('/:id/generate-exchange-url', authMiddleware, async (c) => {
     }));
 
     // 交換URL生成
-    const exchangeUrl = `https://api.flocka.net/cards/exchange?token=${exchangeToken}`;
+    const exchangeUrl = new URL('/cards/exchange', c.env.BETTER_AUTH_URL);
+    exchangeUrl.searchParams.set('token', exchangeToken);
 
     return c.json({
       success: true,
       data: {
-        exchangeUrl,
+        exchangeUrl: exchangeUrl.href,
         cardId: card.id,
         cardName: card.card_name,
         expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
@@ -669,7 +659,11 @@ cards.get('/exchange', async (c) => {
     }
 
     // カード交換ページを表示
-    return c.html(`
+    const appUrl = new URL('flockaapp://exchange');
+    appUrl.searchParams.set('token', token);
+    c.header('Cache-Control', 'no-store');
+    c.header('Referrer-Policy', 'no-referrer');
+    return c.html(html`
       <!DOCTYPE html>
       <html lang="ja">
       <head>
@@ -684,61 +678,31 @@ cards.get('/exchange', async (c) => {
           .card-name { font-size: 1.5em; font-weight: bold; color: #333; margin-bottom: 10px; }
           .card-bio { color: #666; margin-bottom: 10px; font-style: italic; }
           .owner-name { color: #666; margin-bottom: 20px; }
-          .btn { display: inline-block; background: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px; cursor: pointer; border: none; font-size: 16px; }
+          .btn { display: inline-block; background: #0069d9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px; font-size: 16px; }
           .btn:hover { background: #0056b3; }
-          .btn.secondary { background: #6c757d; }
-          .btn.secondary:hover { background: #545b62; }
           .note { font-size: 14px; color: #666; margin-top: 20px; }
         </style>
-        <script>
-          function openApp() {
-            const token = '${token}';
-            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-            
-            // iOS
-            if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-              window.location.href = 'flockaapp://exchange?token=' + encodeURIComponent(token);
-              setTimeout(function() {
-                window.location.href = 'https://flocka.net';
-              }, 1500);
-            }
-            // Android
-            else if (/android/i.test(userAgent)) {
-              window.location.href = 'intent://exchange?token=' + encodeURIComponent(token) + '#Intent;scheme=flockaapp;package=com.flocka.app;S.browser_fallback_url=https%3A//flocka.net;end';
-            }
-            // その他
-            else {
-              window.location.href = 'https://flocka.net';
-            }
-          }
-        </script>
       </head>
       <body>
-        <div class="container">
+        <main class="container">
           <div class="logo">Flocka</div>
           <h1>🎴 カード交換</h1>
           
           <div class="card-preview">
             <div class="card-name">${card.card_name}</div>
-            ${card.bio ? `<div class="card-bio">"${card.bio}"</div>` : ''}
+            ${card.bio ? html`<div class="card-bio">"${card.bio}"</div>` : ''}
             <div class="owner-name">by ${card.owner_name || '匿名ユーザー'}</div>
           </div>
           
           <p>このカードと交換しますか？</p>
           
-          <button class="btn" onclick="openApp()">
-            📱 アプリで交換する
-          </button>
-          
-          <a href="https://flocka.net" class="btn secondary">
-            🌐 flocka.netに移動
-          </a>
+          <a class="btn" href="${appUrl.href}">アプリで交換する</a>
           
           <div class="note">
             ※ カード交換はFlockaアプリで行います<br>
             ※ 交換後はお互いのカードがコレクションに追加されます
           </div>
-        </div>
+        </main>
       </body>
       </html>
     `);
@@ -844,7 +808,7 @@ cards.post('/:id/share', authMiddleware, async (c) => {
     }
 
     // 共有URL生成
-    const shareUrl = generateCardShareURL(cardId);
+    const shareUrl = new URL(`/cards/public/${encodeURIComponent(card.id)}`, c.env.BETTER_AUTH_URL).href;
     
     // QR用データ（交換用ではなく閲覧用）
     const qrData = JSON.stringify({
@@ -900,7 +864,7 @@ cards.get('/public/:id', async (c) => {
       }, 404);
     }
 
-    const imageUrl = card.image_key ? `/cards/image/${card.image_key}` : null;
+    const imageUrl = cardImageUrl(card.image_key);
 
     return c.json({
       success: true,

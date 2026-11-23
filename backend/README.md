@@ -14,9 +14,10 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 ## 技術スタック
 
 - API: Cloudflare Workers（Hono）
-- データベース: Cloudflare D1（SQLite）
+- 認証: Better Auth（メール・パスワード、Bearerセッション）
+- データベース: Cloudflare D1（SQLite。アプリデータと認証データを保存）
 - ストレージ: Cloudflare R2（画像ファイル）
-- メール配信: MailChannels API
+- メール配信: Resend API
 - 言語: TypeScript
 
 ## API エンドポイント（概要）
@@ -24,16 +25,20 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 認証（`/auth`）
 - `POST /register` — 新規登録
 - `POST /login` — ログイン
-- `GET /verify` — メール確認
-- `POST /resend-verification` — 認証メール再送（認証済みが必要な場合あり）
+- `POST /logout` — セッションを無効化
+- `POST /resend-verification-by-email` — 認証メール再送
 - `POST /forgot-password` — パスワードリセット申請
 - `POST /reset-password` — パスワードリセット実行
 - `GET /reset-password` — パスワードリセット用フォーム
 - `GET /me` — 現在のユーザー情報取得
+- `DELETE /me` — アカウント削除
+
+`/auth` はExpoクライアントの既存形式を維持するためのルートです。認証は `/api/auth/*` にマウントした Better Auth が処理します。
 
 カード管理（`/cards`）
-- `POST /upload-url` — 署名付きアップロードURL生成
-- `POST /upload-file` — 直接ファイルアップロード
+- `POST /upload-url` — 旧クライアント向けのアップロード情報（署名付きURLではありません）
+- `POST /upload` — Worker経由でR2に画像をアップロード
+- `GET /image/*` — R2のカード画像を取得
 - `POST /` — カード作成
 - `GET /` — 所有カード一覧取得
 - `GET /:id` — カード詳細取得
@@ -71,32 +76,54 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 - ブラウザ向けフォーム: `GET /auth/reset-password?token=...`
 
 仕様の要点:
-- トークンの有効期限は 1 時間（3600 秒）
-- トークンはワンタイム使用（使用済みフラグで管理）
-- 期限切れトークンの自動クリーンアップを行うテーブルを用意
+- トークンはBetter Authが発行・検証し、再利用できません。
+- パスワードを変更すると既存のセッションが失効します。
 
 ## データベース（概要）
 
-主なテーブル: `users`, `cards`（bio カラム含む）, `exchanges`, `qr_exchange_logs`, `qr_exchange_tokens`, `password_reset_tokens`。
-
-例: `qr_exchange_logs` と `password_reset_tokens` はそれぞれ交換ログとパスワードリセットを管理するテーブルです（スキーマは `db/schema.sql` を参照してください）。
+アプリデータは `users`、`cards`、`exchanges`、`qr_exchange_logs` などに格納します。Better Auth は `auth_accounts`、`auth_sessions`、`auth_verifications`、`auth_rate_limits` を使います。スキーマは [`db/migrations/`](db/migrations/) で管理します。
 
 ## 開発・デプロイ
+
+`src/index.ts` はWorkerの入口、`src/app.ts` はHonoアプリの組み立てを担います。共通のHTTP処理と認証処理は `src/middleware/`、機能別のルートは `src/routes/` にあります。アカウント情報の取得・削除は `/auth/me` と `/users/me` の両方で利用できます。
 
 ローカル開発のコマンドは `backend/` で実行します。
 
 ```bash
 npm ci
 cp .dev.vars.example .dev.vars
+# 生成した値を .dev.vars の BETTER_AUTH_SECRET に設定
+openssl rand -hex 32
 npm run db:init
 npm run dev
 ```
 
-認証機能で使用する `JWT_SECRET` は `.dev.vars` に設定します。メール送信を確認する場合は `MAILCHANNELS_API_KEY` も設定します。
+メール送信を確認する場合は `.dev.vars` に `RESEND_API_KEY` と `RESEND_FROM_EMAIL` を設定します。例の `onboarding@resend.dev` は試験用で、通常の配信には [Resendで認証した所有ドメイン](https://resend.com/docs/dashboard/domains/introduction) のアドレスが必要です。メールの認証・再設定リンクは `BETTER_AUTH_URL` を使うため、実機など別端末でリンクを開く場合は `wrangler.local.jsonc` の値を端末から到達できるURLに変更してください。Expo Webを別のオリジンで使う場合は、そのオリジンを `AUTH_TRUSTED_ORIGINS` に追加します。
+
+カードの交換・共有リンクにも `BETTER_AUTH_URL` を使います。公開環境ではこの値とExpoの `EXPO_PUBLIC_API_URL` に同じ公開API URLを設定してください。
 
 ```bash
 npm run type-check
-npm run build
+npm test
 ```
 
-本番デプロイには、対象環境の `wrangler.toml` を `backend/` に配置してから `npm run deploy` を実行します。
+`npm test` はWorkerをドライランでビルドし、Miniflareの一時D1を使ってAPIを検証します。本番リソースやメール配信サービスには接続しません。`wrangler.local.jsonc` または `.dev.vars.example` のバインディングを変更したら、`npm run types:generate` で型を再生成してください。
+
+### `ecc-flocka.api.zofax.net` へのデプロイ
+
+[`wrangler.zofax.jsonc`](wrangler.zofax.jsonc) は新しいWorker `flocka-api-zofax` と専用のD1・R2を使います。旧Worker `flocka-api` とそのデータは切り替えません。Expoから接続するには `EXPO_PUBLIC_API_URL=https://ecc-flocka.api.zofax.net` を設定します。
+
+```bash
+npx wrangler d1 migrations apply DB --remote --config wrangler.zofax.jsonc
+npm run deploy -- --config wrangler.zofax.jsonc
+```
+
+差出人は `Flocka <auth@notify.zofax.net>` です。Resendの実配信を有効にするには、認証済みの `notify.zofax.net` に送信できるキーを `npx wrangler secret put RESEND_API_KEY --config wrangler.zofax.jsonc` で登録します。
+
+### 旧環境を移行する場合
+
+公開環境では `DB`・`R2` バインディングに加え、`ENVIRONMENT=production`、公開HTTPSの `BETTER_AUTH_URL`、認証済みの送信元 `RESEND_FROM_EMAIL`、必要に応じて `AUTH_TRUSTED_ORIGINS` を設定します。`BETTER_AUTH_SECRET` と `RESEND_API_KEY` は Workers のシークレットに登録します。APIとメール送信元は別ドメインで構いません。例えば、検証用Workerの `workers.dev` URL をAPIに使い、別途Resendで認証したドメインからメールを送れます。
+
+既存環境を切り替える場合は、D1をバックアップして検証環境でマイグレーションを確認してから、旧Workerへの書き込みを止めます。本番設定でD1の `migrations_dir` を `db/migrations` に指定し、`npx wrangler d1 migrations apply DB --remote --config wrangler.toml` を実行してから `npm run deploy` で新Workerに切り替えます。この移行は旧Workerとの同時稼働には対応しません。
+
+既存のユーザーID、パスワード、カード、R2の画像キーは保持されます。メールアドレスは小文字に統一され、大文字・小文字だけが異なる重複がある場合は移行が中断します。旧JWTと旧認証・再設定リンクは移行後に無効になるため、ログインし直し、必要ならメールを再発行してください。

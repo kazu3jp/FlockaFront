@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "flocka-api-zofax",
+  "account_id": "449c1e596fd3950ffce9afbd21bbee4f",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "upload_source_maps": true,
+  "routes": [
+    { "pattern": "ecc-flocka.api.zofax.net", "custom_domain": true }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "BETTER_AUTH_URL": "https://ecc-flocka.api.zofax.net",
+    "RESEND_FROM_EMAIL": "Flocka <auth@notify.zofax.net>"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "flocka-db-zofax",
+      "database_id": "d13cadb9-1123-44ab-a40a-67af09967b29",
+      "migrations_dir": "db/migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "flocka-storage-zofax" }
+  ]
+}

@@ -1,187 +1,71 @@
-import { router } from "expo-router";
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
-  FlatList,
-  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Pressable,
   RefreshControl,
   ScrollView,
-  Text,
   View,
-} from "react-native";
-import { apiClient } from "../../utils/api";
+} from 'react-native';
+import { CollectionPage } from '@/components/collection/CollectionPage';
+import { CollectionEmptyView, CollectionErrorView } from '@/components/collection/CollectionStates';
+import { PageDots } from '@/components/collection/PageDots';
+import { LoadingView } from '@/components/layout/LoadingView';
+import { CARD_ASPECT_RATIO } from '@/constants/card';
+import { APP_BACKGROUND_COLOR, REFRESH_CONTROL_COLORS } from '@/constants/ui';
+import { useCollection } from '@/hooks/useCollection';
 
-const { width: screenWidth } = Dimensions.get("window");
+const { width: screenWidth } = Dimensions.get('window');
 
-// コレクションアイテムの型定義
-interface CollectionItem {
-  id: string;
-  card: {
-    id: string;
-    card_name: string;
-    image_key?: string;
-    image_url?: string;
-    bio?: string;
-    links?: {
-      title: string;
-      url: string;
-    }[];
-  };
-  memo?: string;
-  location_name?: string;
-  created_at: string;
-}
-
-// 2列 x 3行 = 6アイテム/ページ
+// 2列 x 4行 = 8アイテム/ページ
 const PAGE_SIZE = 8;
 
+// アイテム幅を画面サイズに基づいて計算（余白考慮）
+const ITEM_MARGIN = 12;
+const ITEM_WIDTH = Math.floor(screenWidth / 2) - ITEM_MARGIN - 8;
+// 名刺の標準比率 (91mm x 55mm) に合わせた画像高さ
+const CARD_IMAGE_HEIGHT = Math.round(ITEM_WIDTH / CARD_ASPECT_RATIO);
+
 // ページごとに分割
-const paginate = (data: CollectionItem[], pageSize: number) => {
-  const pages = [];
+const paginate = <T,>(data: T[], pageSize: number): T[][] => {
+  const pages: T[][] = [];
   for (let i = 0; i < data.length; i += pageSize) {
     pages.push(data.slice(i, i + pageSize));
   }
   return pages;
 };
 
-const PagerScrollView = forwardRef((props, ref) => {
-  const [collectionData, setCollectionData] = useState<CollectionItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function Collection() {
+  const { collection, loading, refreshing, error, onRefresh, retry } = useCollection();
   const [currentPage, setCurrentPage] = useState(0);
 
-  // コレクションデータを取得
-  const fetchCollection = async (isRefresh: boolean = false) => {
-    try {
-      if (!isRefresh) {
-        setLoading(true);
-      }
-      setError(null);
-      console.log('Fetching collection data...');
-      const data = await apiClient.getCollection();
-      console.log('Collection data received:', data);
-      console.log('Number of items:', data.length);
-      if (data.length > 0) {
-        console.log('First item structure:', JSON.stringify(data[0], null, 2));
-      }
-      setCollectionData(data);
-    } catch (err) {
-      console.error('Failed to fetch collection:', err);
-      setError(err instanceof Error ? err.message : 'コレクションの取得に失敗しました');
-    } finally {
-      if (!isRefresh) {
-        setLoading(false);
-      }
-    }
-  };
-
-  useImperativeHandle(ref, () => ({
-    refreshCollection: () => fetchCollection(true),
-  }));
-
-  // プルトゥリフレッシュの処理
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchCollection(true);
-    setRefreshing(false);
-  };
-
-  // コレクションデータを取得
-  useEffect(() => {
-    fetchCollection();
-  }, []);
-
-  const pages = paginate(collectionData, PAGE_SIZE);
+  const pages = useMemo(() => paginate(collection, PAGE_SIZE), [collection]);
 
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
-    const pageIndex = Math.round(offsetX / screenWidth);
-    setCurrentPage(pageIndex);
+    setCurrentPage(Math.round(offsetX / screenWidth));
   };
 
-  // アイテム幅を画面サイズに基づいて計算（余白考慮）
-  const ITEM_MARGIN = 12; // 各アイテムのマージン
-  const itemWidth = Math.floor(screenWidth / 2) - ITEM_MARGIN - 8;
-
-  // 名刺の標準比率 (91mm x 55mm) に合わせた画像高さを計算
-  const CARD_RATIO = 91 / 55; // width / height
-  const cardImageHeight = Math.round(itemWidth / CARD_RATIO);
-
-  // ローディング中の表示
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center">
-        <ActivityIndicator size="large" color="#3B82F6" />
-        <Text className="mt-4 text-gray-600">コレクションを読み込み中...</Text>
-      </View>
+      <LoadingView message="コレクションを読み込み中..." color="#3B82F6" textClassName="mt-4 text-gray-600" />
     );
   }
 
-  // エラー時の表示
   if (error) {
-    return (
-      <View className="flex-1 items-center justify-center px-4">
-        <Text className="text-red-500 text-center mb-4">{error}</Text>
-        <Pressable
-          onPress={async () => {
-            try {
-              setError(null);
-              setLoading(true);
-              console.log('Retrying collection fetch...');
-              const data = await apiClient.getCollection();
-              console.log('Retry - Collection data received:', data);
-              console.log('Retry - Number of items:', data.length);
-              if (data.length > 0) {
-                console.log('Retry - First item structure:', JSON.stringify(data[0], null, 2));
-              }
-              setCollectionData(data);
-            } catch (err) {
-              console.error('Retry failed:', err);
-              setError(err instanceof Error ? err.message : 'コレクションの取得に失敗しました');
-            } finally {
-              setLoading(false);
-            }
-          }}
-          className="bg-blue-500 px-4 py-2 rounded"
-        >
-          <Text className="text-white">再試行</Text>
-        </Pressable>
-      </View>
-    );
+    return <CollectionErrorView message={error} onRetry={retry} />;
   }
 
-  // データが空の場合
-  if (collectionData.length === 0) {
-    return (
-      <ScrollView
-        contentContainerStyle={{ flex: 1 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#000000']} // Android
-            tintColor="#000000" // iOS
-          />
-        }
-      >
-        <View className="flex-1 items-center justify-center">
-          <Text className="text-gray-500 text-center">
-            まだカードが収集されていません。{'\n'}
-            QR交換でカードを集めてみましょう！
-          </Text>
-        </View>
-      </ScrollView>
-    );
+  const refreshControl = (
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} {...REFRESH_CONTROL_COLORS} />
+  );
+
+  if (collection.length === 0) {
+    return <CollectionEmptyView refreshControl={refreshControl} />;
   }
 
-  // 背景色を#ecebebに変更
   return (
-    <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#ecebeb' }}>
+    <View className="flex-1 items-center justify-center" style={{ backgroundColor: APP_BACKGROUND_COLOR }}>
       {/* 横スクロールページャー */}
       <ScrollView
         horizontal
@@ -190,100 +74,22 @@ const PagerScrollView = forwardRef((props, ref) => {
         onScroll={onScroll}
         scrollEventThrottle={16}
         style={{ flex: 1 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#000000']} // Android
-            tintColor="#000000" // iOS
-          />
-        }
+        refreshControl={refreshControl}
       >
-        {pages.map((page, pageIndex) => {
-          const pageWithPlaceholders: (CollectionItem | null)[] = [...page];
-          while (pageWithPlaceholders.length < PAGE_SIZE) {
-            pageWithPlaceholders.push(null);
-          }
-
-          return (
-            <View key={pageIndex} className="py-16" style={{ width: screenWidth, flex: 1 }}>
-              <FlatList
-                data={pageWithPlaceholders}
-                keyExtractor={(item, index) => (item ? item.id : `placeholder-${pageIndex}-${index}`)}
-                numColumns={2}
-                scrollEnabled={false} // ページ内はスクロールさせない
-                contentContainerStyle={{ paddingHorizontal: 12, alignItems: 'center', justifyContent: 'flex-start', flexGrow: 1 }}
-                columnWrapperStyle={{ justifyContent: 'space-between' }}
-                renderItem={({ item }) => {
-                  if (!item) {
-                    // placeholder
-                    return (
-                      <View
-                        style={{
-                          width: itemWidth,
-                          height: cardImageHeight,
-                          marginVertical: 12,
-                          marginHorizontal: 6,
-                          backgroundColor: '#E5E7EB',
-                          borderRadius: 10,
-                        }}
-                      />
-                    );
-                  }
-
-                  return (
-                    <Pressable
-                      onPress={() => router.push(`/card-detail?id=${item.id}`)}
-                      style={{
-                        width: itemWidth,
-                        marginVertical: 12,
-                        marginHorizontal: 6,
-                        borderWidth: 0,
-                        backgroundColor: '#fff',
-                        borderRadius: 4,
-                        overflow: 'hidden',
-                        // shadow for iOS
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.12,
-                        shadowRadius: 4,
-                        // elevation for Android
-                        elevation: 3,
-                      }}
-                    >
-                      <Image
-                        source={{ 
-                          uri: item.card.image_url?.replace('https://flocka-storage.kazu3jp-purin.workers.dev/', 'https://img.flocka.net/') || `${apiClient.getBaseUrl()}/cards/image/${item.card.image_key}` 
-                        }}
-                        style={{ width: '100%', height: cardImageHeight }}
-                        resizeMode="cover"
-                      />
-                    </Pressable>
-                  );
-                }}
-              />
-            </View>
-          );
-        })}
+        {pages.map((page, pageIndex) => (
+          <CollectionPage
+            key={pageIndex}
+            items={page}
+            pageIndex={pageIndex}
+            pageSize={PAGE_SIZE}
+            pageWidth={screenWidth}
+            itemWidth={ITEM_WIDTH}
+            imageHeight={CARD_IMAGE_HEIGHT}
+          />
+        ))}
       </ScrollView>
 
-      {/* ドットインジケータ */}
-      {pages.length > 1 && (
-        <View className="flex-row justify-center absolute bottom-40">
-          {pages.map((_, index) => (
-            <View
-              key={index}
-              className={`w-2.5 h-2.5 rounded-full mx-1.5 ${
-                index === currentPage ? "bg-gray-500" : "bg-gray-300"
-              }`}
-            />
-          ))}
-        </View>
-      )}
+      <PageDots count={pages.length} current={currentPage} />
     </View>
   );
-});
-
-PagerScrollView.displayName = "PagerScrollView";
-
-export default PagerScrollView;
+}

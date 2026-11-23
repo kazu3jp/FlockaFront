@@ -1,12 +1,16 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, Button, Text, View } from 'react-native';
+import { Button, Text, View } from 'react-native';
+import { alertAndGoBack } from '@/utils/alert';
+
+/** 連続スキャンを無視する間隔 */
+const SCAN_DEBOUNCE_MS = 1000;
 
 export default function ScanQr() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanned, setIsScanned] = useState(false);
-  const lastScanTime = useRef<number>(0);
+  const lastScanTime = useRef(0);
   const { selectedCardId } = useLocalSearchParams<{ selectedCardId: string }>();
 
   // 画面がフォーカスされたときにスキャンフラグをリセット
@@ -32,41 +36,26 @@ export default function ScanQr() {
 
   // QRコードスキャン後の処理
   const handleQRCodeScanned = (qrData: string) => {
-    const now = Date.now();
-    
     // 既にスキャン済みの場合は処理しない
-    if (isScanned) {
-      return;
-    }
+    if (isScanned) return;
 
     // デバウンス: 1秒以内の連続スキャンを防ぐ
-    if (now - lastScanTime.current < 1000) {
-      return;
-    }
-
+    const now = Date.now();
+    if (now - lastScanTime.current < SCAN_DEBOUNCE_MS) return;
     lastScanTime.current = now;
 
     if (!selectedCardId) {
-      Alert.alert(
-        "エラー",
-        "交換する名刺が選択されていません。",
-        [{ text: "OK", onPress: () => router.back() }]
-      );
+      alertAndGoBack('エラー', '交換する名刺が選択されていません。');
       return;
     }
 
     // スキャンフラグを立てて重複を防ぐ
     setIsScanned(true);
 
-    console.log('QR Code processing:', qrData);
-
     // 名刺プレビューページに遷移
     router.push({
       pathname: '/card-preview',
-      params: {
-        qrData: qrData,
-        selectedCardId: selectedCardId
-      }
+      params: { qrData, selectedCardId },
     });
   };
 
@@ -74,14 +63,9 @@ export default function ScanQr() {
     <View className="flex-1">
       <CameraView
         style={{ flex: 1 }}
-        facing='back'
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr'],
-        }}
-        onBarcodeScanned={isScanned ? undefined : ({ data }) => {
-          console.log('QR Code scanned:', data);
-          handleQRCodeScanned(data);
-        }}
+        facing="back"
+        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        onBarcodeScanned={isScanned ? undefined : ({ data }) => handleQRCodeScanned(data)}
       />
     </View>
   );

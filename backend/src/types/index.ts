@@ -1,31 +1,11 @@
-// Cloudflare Workers環境の型定義
-
-export interface Env {
-  DB: D1Database;
-  R2: R2Bucket;
-  JWT_SECRET: string;
-  ENVIRONMENT: string;
-  MAILCHANNELS_API_KEY: string;
-  [key: string]: unknown;
-}
-
 export interface HonoEnv {
-  Bindings: Env;
+  Bindings: WorkerBindings;
   Variables: {
-    user?: JWTPayload;
+    user?: { userId: string };
   };
 }
 
 // データベーステーブルの型定義
-export interface User {
-  id: string;
-  email: string;
-  name?: string; // null許容に変更
-  hashed_password: string;
-  email_verified: number;
-  created_at: string;
-}
-
 export interface Card {
   id: string;
   user_id: string;
@@ -59,44 +39,6 @@ export interface QRExchangeLog {
   longitude?: number;
   notified: number;
   created_at: string;
-}
-
-export interface PasswordResetToken {
-  token: string;
-  user_id: string;
-  email: string;
-  created_at: string;
-  expires_at: string;
-  used: number;
-}
-
-// APIリクエスト/レスポンスの型定義
-export interface RegisterRequest {
-  email: string;
-  name?: string; // オプショナルに変更
-  password: string;
-}
-
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface VerifyEmailRequest {
-  token: string;
-}
-
-export interface ResendVerificationRequest {
-  email: string;
-}
-
-export interface ForgotPasswordRequest {
-  email: string;
-}
-
-export interface ResetPasswordRequest {
-  token: string;
-  newPassword: string;
 }
 
 export interface CreateCardRequest {
@@ -208,12 +150,6 @@ export interface PublicCard {
     url: string;
   }>;
   owner_name: string;
-}
-
-export interface JWTPayload {
-  userId: string;
-  email: string;
-  exp: number;
 }
 
 export interface ApiResponse<T = any> {

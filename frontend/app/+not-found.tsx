@@ -3,6 +3,7 @@ import { StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { APP_BACKGROUND_COLOR } from '@/constants/ui';
 
 export default function NotFoundScreen() {
   return (
@@ -24,7 +25,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#ecebeb', // 背景色を追加
+    backgroundColor: APP_BACKGROUND_COLOR,
   },
   link: {
     marginTop: 15,

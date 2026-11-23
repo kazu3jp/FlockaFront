@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Image, View } from 'react-native';
 import 'react-native-reanimated';
 
+import { APP_BACKGROUND_COLOR } from '@/constants/ui';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
@@ -23,7 +24,7 @@ export default function RootLayout() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#ecebeb' }}>
+    <View style={{ flex: 1, backgroundColor: APP_BACKGROUND_COLOR }}>
       <AuthProvider>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <Stack

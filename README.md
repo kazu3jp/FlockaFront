@@ -11,17 +11,19 @@ Flocka は、趣味やコミュニティごとに使い分けられる電子名�
 ## リポジトリ構成
 
 - [`frontend/`](frontend/) は Expo Router、React Native、TypeScript のアプリです。
-- [`backend/`](backend/README.md) は Cloudflare Workers、Hono、D1、R2 のAPIです。
+- [`backend/`](backend/README.md) は Hono、Better Auth、Cloudflare D1／R2 を使う Workers APIです。
 
 ## ローカル開発
 
-Node.js 22 と npm を使用します。以下のコマンドはリポジトリのルートで実行します。
+Node.js 22（22.12 以降）と npm を使用します。以下のコマンドはリポジトリのルートで実行します。
 
 ```bash
 npm --prefix frontend ci
 npm --prefix backend ci
 cp backend/.dev.vars.example backend/.dev.vars
 cp frontend/.env.example frontend/.env.local
+# 生成した値を backend/.dev.vars の BETTER_AUTH_SECRET に設定
+openssl rand -hex 32
 npm --prefix backend run db:init
 npm --prefix backend run dev
 ```
@@ -32,14 +34,14 @@ APIが `http://127.0.0.1:8787/` で起動したら、別のターミナルでア
 npm --prefix frontend start
 ```
 
-`frontend/.env.local` の `EXPO_PUBLIC_API_URL` には、アプリを実行する端末から到達できるURLを設定します。Androidエミュレーターでは `http://10.0.2.2:8787` を指定します。実機では開発PCのLANアドレスを指定し、APIを `npm --prefix backend run dev -- --ip 0.0.0.0` で起動します。変数が未設定の場合、アプリは `https://api.flocka.net` に接続します。
+`frontend/.env.local` の `EXPO_PUBLIC_API_URL` には、アプリを実行する端末から到達できるURLを設定します。Androidエミュレーターでは `http://10.0.2.2:8787` を指定します。実機では開発PCのLANアドレスを指定し、APIを `npm --prefix backend run dev -- --ip 0.0.0.0` で起動します。未設定の場合、開発モードでは `http://127.0.0.1:8787` を使います。配布ビルドでは公開API URLを明示的に設定してください。
 
 ## 検証
 
 ```bash
 npm --prefix frontend run lint
 npm --prefix backend run type-check
-npm --prefix backend run build
+npm --prefix backend test
 ```
 
 ## コミットとプルリクエスト

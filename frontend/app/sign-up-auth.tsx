@@ -1,58 +1,39 @@
-import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
-import { useAuth } from "../contexts/AuthContext";
-import { apiClient } from "../utils/api";
+import { AuthCardButton, AuthCardLinkButton } from '@/components/form/AuthCardButton';
+import { AuthCardLayout } from '@/components/layout/AuthCardLayout';
+import { useAuth } from '@/contexts/AuthContext';
+import { confirmAlert } from '@/utils/alert';
+import { apiClient } from '@/utils/api';
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useState } from "react";
+import { Alert } from "react-native";
+
+/** 認証メールを再送できるようになるまでの秒数 */
+const COOLDOWN_SECONDS = 60;
 
 export default function SignUpAuth() {
   const { user, logout } = useAuth();
+  const { email: enteredEmail } = useLocalSearchParams<{ email?: string }>();
+  const email = user?.email ?? enteredEmail;
   const [loading, setLoading] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-
-  // Cooldown for resend (seconds)
-  const COOLDOWN_SECONDS = 60;
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const intervalRef = useRef<number | null>(null);
 
+  // 再送クールダウンのカウントダウン（1秒ごとに1減らし、0で止まる）
   useEffect(() => {
-    // cleanup on unmount
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current as unknown as number);
-        intervalRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (cooldownSeconds <= 0) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current as unknown as number);
-        intervalRef.current = null;
-      }
-      return;
-    }
-
-    // start interval if not already started
-    if (!intervalRef.current) {
-      intervalRef.current = setInterval(() => {
-        setCooldownSeconds((s) => {
-          if (s <= 1) {
-            // will clear in next effect run
-            return 0;
-          }
-          return s - 1;
-        });
-      }, 1000) as unknown as number;
-    }
+    if (cooldownSeconds <= 0) return;
+    const timer = setTimeout(() => setCooldownSeconds((s) => Math.max(s - 1, 0)), 1000);
+    return () => clearTimeout(timer);
   }, [cooldownSeconds]);
 
   const handleResend = async () => {
-    if (!user?.email) {
-      Alert.alert('ユーザー情報がありません', 'サインアップ画面からメールアドレスを入力してください。', [
-        { text: 'キャンセル', style: 'cancel' },
-        { text: 'サインアップへ', onPress: () => router.push('/sign-up') }
-      ]);
+    if (!email) {
+      confirmAlert({
+        title: 'ユーザー情報がありません',
+        message: 'サインアップ画面からメールアドレスを入力してください。',
+        confirmText: 'サインアップへ',
+        destructive: false,
+        onConfirm: () => router.push('/sign-up'),
+      });
       return;
     }
 
@@ -63,10 +44,8 @@ export default function SignUpAuth() {
 
     try {
       setLoading(true);
-      await apiClient.resendVerificationEmail(user.email);
-      Alert.alert('送信完了', `${user.email} に認証メールを再送しました。メールボックスを確認してください。`);
-
-      // start cooldown
+      await apiClient.resendVerificationEmail(email);
+      Alert.alert('送信受付', '認証が必要な場合はメールが届きます。メールボックスを確認してください。');
       setCooldownSeconds(COOLDOWN_SECONDS);
     } catch (error) {
       console.error('Resend verification failed:', error);
@@ -90,41 +69,21 @@ export default function SignUpAuth() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#ecebeb', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <View style={{ width: '100%', maxWidth: 420, backgroundColor: '#fff', borderRadius: 12, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>メール認証を完了してください</Text>
-        <Text style={{ fontSize: 14, color: '#6B7280', marginBottom: 20, textAlign: 'center' }}>{user?.email ?? '—'}</Text>
-
-        <Pressable
-          onPress={handleResend}
-          disabled={loading || cooldownSeconds > 0}
-          style={{ backgroundColor: '#111827', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginBottom: 12, opacity: (loading || cooldownSeconds > 0) ? 0.7 : 1 }}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={{ color: '#fff', fontWeight: '600' }}>
-              {cooldownSeconds > 0 ? `再送まで待つ（${cooldownSeconds}s）` : '認証メールを再送する'}
-            </Text>
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={handleLogoutAndSignup}
-          disabled={loggingOut}
-          style={{ backgroundColor: '#fff', paddingVertical: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 8, opacity: loggingOut ? 0.7 : 1 }}
-        >
-          {loggingOut ? (
-            <ActivityIndicator color="#111827" />
-          ) : (
-            <Text style={{ color: '#111827', fontWeight: '600' }}>別のメールで登録し直す（ログアウト）</Text>
-          )}
-        </Pressable>
-
-        <Pressable onPress={()=>router.replace('/')} style={{ alignItems: 'center', paddingVertical: 8 }}>
-          <Text style={{ color: '#374151' }}>ホームへ</Text>
-        </Pressable>
-      </View>
-    </View>
+    <AuthCardLayout title="メール認証を完了してください" subtitle={email ?? '—'} subtitleMarginBottom={20}>
+      <AuthCardButton
+        title={cooldownSeconds > 0 ? `再送まで待つ（${cooldownSeconds}s）` : '認証メールを再送する'}
+        onPress={handleResend}
+        loading={loading}
+        disabled={cooldownSeconds > 0}
+        marginBottom={12}
+      />
+      <AuthCardButton
+        title="別のメールで登録し直す（ログアウト）"
+        onPress={handleLogoutAndSignup}
+        loading={loggingOut}
+        variant="outline"
+      />
+      <AuthCardLinkButton title="ホームへ" onPress={() => router.replace('/')} />
+    </AuthCardLayout>
   );
 }
