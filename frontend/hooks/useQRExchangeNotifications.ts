@@ -1,70 +1,57 @@
-import { useCallback, useEffect, useState } from 'react';
-import { apiClient, Card } from '../utils/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiClient, type QRExchangeLog } from '../utils/api';
 
-interface QRExchangeLog {
-  id: string;
-  scannerUser: {
-    id: string;
-    name: string;
-  };
-  scannerCard: Card;
-  memo?: string;
-  created_at: string;
-}
+const CHECK_INTERVAL_MS = 10000;
 
 export const useQRExchangeNotifications = () => {
   const [isChecking, setIsChecking] = useState(false);
   const [newExchangeLog, setNewExchangeLog] = useState<QRExchangeLog | null>(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [lastCheckTime, setLastCheckTime] = useState<number>(0);
+  // ポーリング制御用の値は再レンダリング不要なので ref で持つ（コールバックを安定させる）
+  const isCheckingRef = useRef(false);
+  const lastCheckTimeRef = useRef(0);
 
   const checkForNewExchanges = useCallback(async () => {
-    if (isChecking) return;
+    if (isCheckingRef.current) return;
 
     // 前回チェックから10秒未満の場合はスキップ
     const now = Date.now();
-    if (now - lastCheckTime < 10000) {
-      return;
-    }
+    if (now - lastCheckTimeRef.current < CHECK_INTERVAL_MS) return;
 
     try {
+      isCheckingRef.current = true;
       setIsChecking(true);
-      setLastCheckTime(now);
+      lastCheckTimeRef.current = now;
       const data = await apiClient.getQRExchangeLogs();
-      
-      // 新しい交換ログがある場合
+
       if (data.newLogs > 0 && data.logs.length > 0) {
-        const latestLog = data.logs[0]; // 最新のログ
-        setNewExchangeLog(latestLog);
+        setNewExchangeLog(data.logs[0]); // 最新のログ
         setShowPreview(true);
       }
     } catch {
-      // サイレントエラー - QR交換ログは必須機能ではないため、エラーを無視
+      // QR交換ログは必須機能ではないため、エラーは無視する
     } finally {
+      isCheckingRef.current = false;
       setIsChecking(false);
     }
-  }, [isChecking, lastCheckTime]);
+  }, []);
 
-  // 定期的にチェック（10秒間隔）
   useEffect(() => {
-    const interval = setInterval(checkForNewExchanges, 10000); // 10秒 = 10000ms
-
-    // 初回チェック
+    const interval = setInterval(checkForNewExchanges, CHECK_INTERVAL_MS);
     checkForNewExchanges();
-    
     return () => clearInterval(interval);
   }, [checkForNewExchanges]);
 
-  const closePreview = () => {
+  const closePreview = useCallback(() => {
     setShowPreview(false);
     setNewExchangeLog(null);
-  };
+  }, []);
 
   return {
     checkForNewExchanges,
     isChecking,
     newExchangeLog,
     showPreview,
-    closePreview
+    closePreview,
   };
 };

@@ -1,12 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { apiClient, tokenManager } from '../utils/api';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { apiClient, tokenManager, type User } from '../utils/api';
 
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  email_verified: boolean;
-}
+export type { User };
 
 interface AuthContextType {
   user: User | null;
@@ -35,29 +30,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
     try {
       setIsLoading(true);
-      console.log('Checking auth status...');
-      
-      // トークンが存在するかチェック
+
       const token = await tokenManager.get();
       if (!token) {
-        console.log('No token found');
         setUser(null);
         return;
       }
-      
+
       const isValid = await apiClient.validateToken();
-      console.log('Token validation result:', isValid);
-      
       if (isValid) {
         const userData = await apiClient.getCurrentUser();
-        setUser(userData as User);
+        setUser(userData ?? null);
       } else {
-        console.log('Token invalid, clearing user state');
         setUser(null);
-        await apiClient.logout(); // トークンを削除
+        await apiClient.logout(); // 無効なトークンを削除
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -66,9 +55,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
       const loginResponse = await apiClient.login(email, password);
       setUser(loginResponse.user);
@@ -76,9 +65,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Login failed:', error);
       throw error;
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await apiClient.logout();
     } catch (error) {
@@ -86,24 +75,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setUser(null);
     }
-  };
+  }, []);
 
   useEffect(() => {
     checkAuthStatus();
-  }, []);
+  }, [checkAuthStatus]);
 
-  const value: AuthContextType = {
-    user,
-    isLoading,
-    isAuthenticated: !!user,
-    login,
-    logout,
-    checkAuthStatus,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user,
+      isLoading,
+      isAuthenticated: !!user,
+      login,
+      logout,
+      checkAuthStatus,
+    }),
+    [user, isLoading, login, logout, checkAuthStatus]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
