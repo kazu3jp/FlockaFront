@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { html } from 'hono/html';
 import { authMiddleware, getCurrentUser } from '../middleware/auth';
 import type { HonoEnv, CreateCardRequest, UpdateCardRequest, Card, UploadUrlRequest, GenerateQRRequest, ShareCardRequest } from '../types';
 import { 
@@ -514,12 +515,13 @@ cards.post('/:id/generate-exchange-url', authMiddleware, async (c) => {
     }));
 
     // 交換URL生成
-    const exchangeUrl = `https://api.flocka.net/cards/exchange?token=${exchangeToken}`;
+    const exchangeUrl = new URL('/cards/exchange', c.env.BETTER_AUTH_URL);
+    exchangeUrl.searchParams.set('token', exchangeToken);
 
     return c.json({
       success: true,
       data: {
-        exchangeUrl,
+        exchangeUrl: exchangeUrl.href,
         cardId: card.id,
         cardName: card.card_name,
         expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
@@ -657,7 +659,11 @@ cards.get('/exchange', async (c) => {
     }
 
     // カード交換ページを表示
-    return c.html(`
+    const appUrl = new URL('flockaapp://exchange');
+    appUrl.searchParams.set('token', token);
+    c.header('Cache-Control', 'no-store');
+    c.header('Referrer-Policy', 'no-referrer');
+    return c.html(html`
       <!DOCTYPE html>
       <html lang="ja">
       <head>
@@ -672,61 +678,31 @@ cards.get('/exchange', async (c) => {
           .card-name { font-size: 1.5em; font-weight: bold; color: #333; margin-bottom: 10px; }
           .card-bio { color: #666; margin-bottom: 10px; font-style: italic; }
           .owner-name { color: #666; margin-bottom: 20px; }
-          .btn { display: inline-block; background: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px; cursor: pointer; border: none; font-size: 16px; }
+          .btn { display: inline-block; background: #0069d9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px; font-size: 16px; }
           .btn:hover { background: #0056b3; }
-          .btn.secondary { background: #6c757d; }
-          .btn.secondary:hover { background: #545b62; }
           .note { font-size: 14px; color: #666; margin-top: 20px; }
         </style>
-        <script>
-          function openApp() {
-            const token = '${token}';
-            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-            
-            // iOS
-            if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-              window.location.href = 'flockaapp://exchange?token=' + encodeURIComponent(token);
-              setTimeout(function() {
-                window.location.href = 'https://flocka.net';
-              }, 1500);
-            }
-            // Android
-            else if (/android/i.test(userAgent)) {
-              window.location.href = 'intent://exchange?token=' + encodeURIComponent(token) + '#Intent;scheme=flockaapp;package=com.flocka.app;S.browser_fallback_url=https%3A//flocka.net;end';
-            }
-            // その他
-            else {
-              window.location.href = 'https://flocka.net';
-            }
-          }
-        </script>
       </head>
       <body>
-        <div class="container">
+        <main class="container">
           <div class="logo">Flocka</div>
           <h1>🎴 カード交換</h1>
           
           <div class="card-preview">
             <div class="card-name">${card.card_name}</div>
-            ${card.bio ? `<div class="card-bio">"${card.bio}"</div>` : ''}
+            ${card.bio ? html`<div class="card-bio">"${card.bio}"</div>` : ''}
             <div class="owner-name">by ${card.owner_name || '匿名ユーザー'}</div>
           </div>
           
           <p>このカードと交換しますか？</p>
           
-          <button class="btn" onclick="openApp()">
-            📱 アプリで交換する
-          </button>
-          
-          <a href="https://flocka.net" class="btn secondary">
-            🌐 flocka.netに移動
-          </a>
+          <a class="btn" href="${appUrl.href}">アプリで交換する</a>
           
           <div class="note">
             ※ カード交換はFlockaアプリで行います<br>
             ※ 交換後はお互いのカードがコレクションに追加されます
           </div>
-        </div>
+        </main>
       </body>
       </html>
     `);
@@ -832,7 +808,7 @@ cards.post('/:id/share', authMiddleware, async (c) => {
     }
 
     // 共有URL生成
-    const shareUrl = `https://flocka.net/card/${cardId}`;
+    const shareUrl = new URL(`/cards/public/${encodeURIComponent(card.id)}`, c.env.BETTER_AUTH_URL).href;
     
     // QR用データ（交換用ではなく閲覧用）
     const qrData = JSON.stringify({

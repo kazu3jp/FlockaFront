@@ -160,6 +160,29 @@ test('card image uploads use the same R2 binding as downloads', async () => {
   assert.equal(await image.text(), 'uploaded bytes');
 });
 
+test('share and exchange links use the configured public origin', async () => {
+  const { token } = await login(user.email, user.password);
+  const headers = authorization(token);
+  const share = await post('/cards/legacy-card/share', {}, headers);
+  assert.equal(share.status, 200);
+  const { data: shareData } = await share.json();
+  const shareUrl = new URL(shareData.shareUrl);
+  assert.equal(shareUrl.origin, baseUrl);
+  assert.equal(shareUrl.pathname, '/cards/public/legacy-card');
+  assert.equal((await request(shareUrl)).status, 200);
+
+  const exchange = await post('/cards/legacy-card/generate-exchange-url', {}, headers);
+  assert.equal(exchange.status, 200);
+  const { data: exchangeData } = await exchange.json();
+  const exchangeUrl = new URL(exchangeData.exchangeUrl);
+  assert.equal(exchangeUrl.origin, baseUrl);
+  assert.ok(exchangeUrl.searchParams.get('token'));
+  const page = await request(exchangeUrl);
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(await page.text(), /href="flockaapp:\/\/exchange\?token=/);
+});
+
 test('only valid sessions are accepted and logout invalidates the session', async () => {
   const missing = await request('/auth/me');
   assert.equal(missing.status, 401);

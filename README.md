@@ -34,7 +34,7 @@ APIが `http://127.0.0.1:8787/` で起動したら、別のターミナルでア
 npm --prefix frontend start
 ```
 
-`frontend/.env.local` の `EXPO_PUBLIC_API_URL` には、アプリを実行する端末から到達できるURLを設定します。Androidエミュレーターでは `http://10.0.2.2:8787` を指定します。実機では開発PCのLANアドレスを指定し、APIを `npm --prefix backend run dev -- --ip 0.0.0.0` で起動します。変数が未設定の場合、アプリは `https://api.flocka.net` に接続します。
+`frontend/.env.local` の `EXPO_PUBLIC_API_URL` には、アプリを実行する端末から到達できるURLを設定します。Androidエミュレーターでは `http://10.0.2.2:8787` を指定します。実機では開発PCのLANアドレスを指定し、APIを `npm --prefix backend run dev -- --ip 0.0.0.0` で起動します。未設定の場合、開発モードでは `http://127.0.0.1:8787` を使います。配布ビルドでは公開API URLを明示的に設定してください。
 
 ## 検証
 

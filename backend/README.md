@@ -100,6 +100,8 @@ npm run dev
 
 メール送信を確認する場合は `.dev.vars` に `RESEND_API_KEY` と `RESEND_FROM_EMAIL` を設定します。例の `onboarding@resend.dev` は試験用で、通常の配信には [Resendで認証した所有ドメイン](https://resend.com/docs/dashboard/domains/introduction) のアドレスが必要です。メールの認証・再設定リンクは `BETTER_AUTH_URL` を使うため、実機など別端末でリンクを開く場合は `wrangler.local.jsonc` の値を端末から到達できるURLに変更してください。Expo Webを別のオリジンで使う場合は、そのオリジンを `AUTH_TRUSTED_ORIGINS` に追加します。
 
+カードの交換・共有リンクにも `BETTER_AUTH_URL` を使います。公開環境ではこの値とExpoの `EXPO_PUBLIC_API_URL` に同じ公開API URLを設定してください。
+
 ```bash
 npm run type-check
 npm test

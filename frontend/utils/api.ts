@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://api.flocka.net').replace(/\/+$/, '');
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? 'http://127.0.0.1:8787' : '');
 
 interface ApiResponse<T = any> {
   success: boolean;
@@ -50,11 +50,12 @@ export const tokenManager = {
 
 // API クライアント
 export class ApiClient {
-  private baseUrl: string;
+  constructor(private readonly configuredBaseUrl: string = API_BASE_URL) {}
 
-  constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl;
-    console.log('API Client initialized with base URL:', this.baseUrl);
+  private get baseUrl(): string {
+    const url = this.configuredBaseUrl.trim().replace(/\/+$/, '');
+    if (!url) throw new Error('EXPO_PUBLIC_API_URL にAPIのURLを設定してください');
+    return url;
   }
 
   private async request<T>(
