@@ -42,6 +42,18 @@ npm --prefix backend run type-check
 npm --prefix backend run build
 ```
 
+## コミットとプルリクエスト
+
+コミットの1行目とPRタイトルには [Conventional Commits 1.0.0](https://www.conventionalcommits.org/ja/v1.0.0/) の形式を使います。例として `fix(backend): カード交換履歴の取得を修正` のように記述します。スコープは任意です。
+
+コミット用テンプレートを有効にするには、クローンごとにリポジトリのルートで次を実行します。
+
+```bash
+git config --local commit.template .gitmessage
+```
+
+`git commit` でエディタを開くと記入ガイドが表示されます。GitHubでは、新規PRの本文に [PRテンプレート](.github/pull_request_template.md) が表示されます。
+
 ## 主要な画面と機能
 
 - `/` (Home) — QR 表示、カード切替、アクション（読み取りなど）
