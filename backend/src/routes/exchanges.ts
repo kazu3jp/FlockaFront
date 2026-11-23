@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Handler } from 'hono';
 import { authMiddleware, getCurrentUser } from '../middleware/auth';
 import type { 
   HonoEnv, 
@@ -262,7 +262,7 @@ exchanges.put('/:id', authMiddleware, async (c) => {
  * GET /exchanges/:id
  * 特定の交換記録詳細を取得（要認証）
  */
-exchanges.get('/:id', authMiddleware, async (c) => {
+const getExchange: Handler<HonoEnv, '/:id'> = async (c) => {
   try {
     const currentUser = getCurrentUser(c);
     const exchangeId = c.req.param('id');
@@ -326,7 +326,7 @@ exchanges.get('/:id', authMiddleware, async (c) => {
       error: 'Failed to fetch exchange',
     }, 500);
   }
-});
+};
 
 /**
  * DELETE /exchanges/:id
@@ -931,5 +931,8 @@ exchanges.delete('/qr/logs/:id', authMiddleware, async (c) => {
     return c.json(errorDetails, 500);
   }
 });
+
+// 固定パス（/qr-logs）を先に登録し、交換IDとして解釈されないようにする。
+exchanges.get('/:id', authMiddleware, getExchange);
 
 export default exchanges;
