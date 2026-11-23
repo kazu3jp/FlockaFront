@@ -221,13 +221,13 @@ export default function CardDetail() {
       />
       <View className="bg-white p-6 rounded-lg w-full flex-col items-center shadow-gray-200 shadow-sm">
         <Text className="text-2xl font-bold mb-4">{card.card_name}</Text>
-        {card.bio && (
+        {!!card.bio && (
           <Text className="text-gray-600 text-sm mb-4 text-center">{card.bio}</Text>
         )}
         {/* 各種リンク */}
         <LinkButtons links={card.links} />
         {/* 交換場所 */}
-        {exchangeData.location_name && (
+        {!!exchangeData.location_name && (
           <Text className="text-gray-500 text-sm mb-2">
             📍 {exchangeData.location_name}
           </Text>

@@ -11,17 +11,14 @@ export const useQRExchangeNotifications = () => {
   const isCheckingRef = useRef(false);
   const lastCheckTimeRef = useRef(0);
 
-  const checkForNewExchanges = useCallback(async () => {
+  // 定期実行からはこちらを直接呼ぶ（タイマーのずれで間引きに引っかからないように）
+  const runCheck = useCallback(async () => {
     if (isCheckingRef.current) return;
-
-    // 前回チェックから10秒未満の場合はスキップ
-    const now = Date.now();
-    if (now - lastCheckTimeRef.current < CHECK_INTERVAL_MS) return;
 
     try {
       isCheckingRef.current = true;
       setIsChecking(true);
-      lastCheckTimeRef.current = now;
+      lastCheckTimeRef.current = Date.now();
       const data = await apiClient.getQRExchangeLogs();
 
       if (data.newLogs > 0 && data.logs.length > 0) {
@@ -36,11 +33,17 @@ export const useQRExchangeNotifications = () => {
     }
   }, []);
 
+  // 画面側から呼ばれるチェック。前回から10秒未満ならスキップする
+  const checkForNewExchanges = useCallback(async () => {
+    if (Date.now() - lastCheckTimeRef.current < CHECK_INTERVAL_MS) return;
+    await runCheck();
+  }, [runCheck]);
+
   useEffect(() => {
-    const interval = setInterval(checkForNewExchanges, CHECK_INTERVAL_MS);
-    checkForNewExchanges();
+    const interval = setInterval(runCheck, CHECK_INTERVAL_MS);
+    runCheck();
     return () => clearInterval(interval);
-  }, [checkForNewExchanges]);
+  }, [runCheck]);
 
   const closePreview = useCallback(() => {
     setShowPreview(false);

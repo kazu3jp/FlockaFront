@@ -287,7 +287,7 @@ export default function CardPreview() {
           <PreviewImage card={card} />
 
           {/* Bio情報 */}
-          {card.bio && (
+          {!!card.bio && (
             <View className="bg-white rounded-lg shadow-sm p-4 mb-4">
               <Text className="text-lg font-semibold text-gray-800 mb-2">Bio</Text>
               <Text className="text-gray-700 leading-6">{card.bio}</Text>

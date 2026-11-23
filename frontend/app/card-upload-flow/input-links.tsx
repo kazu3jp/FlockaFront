@@ -157,7 +157,7 @@ export default function InputLinks() {
           {/* 基本情報表示 */}
           <View className="mt-4 p-3 bg-white rounded-lg">
             <Text className="text-sm font-medium text-gray-700">名前: {name}</Text>
-            {bio && <Text className="text-xs text-gray-600 mt-1">自己紹介: {bio}</Text>}
+            {!!bio && <Text className="text-xs text-gray-600 mt-1">自己紹介: {bio}</Text>}
           </View>
         </CardPreviewSection>
 
