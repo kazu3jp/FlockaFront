@@ -118,7 +118,7 @@ npx wrangler d1 migrations apply DB --remote --config wrangler.zofax.jsonc
 npm run deploy -- --config wrangler.zofax.jsonc
 ```
 
-Resendの実配信を有効にするには、認証済みの送信元を `wrangler.zofax.jsonc` の `vars.RESEND_FROM_EMAIL` に追加し、`npx wrangler secret put RESEND_API_KEY --config wrangler.zofax.jsonc` で送信用キーを登録します。
+差出人は `Flocka <auth@notify.zofax.net>` です。Resendの実配信を有効にするには、認証済みの `notify.zofax.net` に送信できるキーを `npx wrangler secret put RESEND_API_KEY --config wrangler.zofax.jsonc` で登録します。
 
 ### 旧環境を移行する場合
 

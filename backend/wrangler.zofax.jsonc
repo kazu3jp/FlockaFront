@@ -13,7 +13,8 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
-    "BETTER_AUTH_URL": "https://ecc-flocka.api.zofax.net"
+    "BETTER_AUTH_URL": "https://ecc-flocka.api.zofax.net",
+    "RESEND_FROM_EMAIL": "Flocka <auth@notify.zofax.net>"
   },
   "d1_databases": [
     {
