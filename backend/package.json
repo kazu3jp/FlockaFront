@@ -4,9 +4,11 @@
   "description": "Flocka - デジタルプロフィールカード交換アプリのバックエンドAPI",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --config wrangler.local.jsonc --local",
     "deploy": "wrangler deploy",
-    "build": "wrangler deploy --dry-run",
+    "build": "wrangler deploy --config wrangler.local.jsonc --dry-run --outdir dist",
+    "type-check": "tsc --noEmit",
+    "db:init": "wrangler d1 execute flocka-db --config wrangler.local.jsonc --local --file=./db/schema.sql",
     "db:generate": "wrangler d1 execute flocka-db --file=./db/schema.sql",
     "db:migrate": "wrangler d1 migrations apply flocka-db"
   },

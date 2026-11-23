@@ -11,6 +11,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 wrangler.toml
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # Build outputs
 dist/

@@ -83,15 +83,20 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 
 ## 開発・デプロイ
 
-ローカル開発とデプロイに関する基本コマンド:
+ローカル開発のコマンドは `backend/` で実行します。
 
 ```bash
-npm install
+npm ci
+cp .dev.vars.example .dev.vars
+npm run db:init
 npm run dev
-npm run type-check
-# ローカルでスキーマを適用する例
-npx wrangler d1 execute flocka-db --local --file=./db/schema.sql
-# 本番適用
-npx wrangler d1 execute flocka-db --remote --file=./db/schema.sql
-npm run deploy
 ```
+
+認証機能で使用する `JWT_SECRET` は `.dev.vars` に設定します。メール送信を確認する場合は `MAILCHANNELS_API_KEY` も設定します。
+
+```bash
+npm run type-check
+npm run build
+```
+
+本番デプロイには、対象環境の `wrangler.toml` を `backend/` に配置してから `npm run deploy` を実行します。
