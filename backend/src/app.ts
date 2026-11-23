@@ -20,7 +20,7 @@ app.onError((error, c) => {
 
 // ルートハンドラーの設定
 app.route('/auth', authRoutes);
-app.route('/users', authRoutes); // /users/me エンドポイント用
+app.route('/users', authRoutes); // 既存の /users/* エイリアスを維持
 app.route('/cards', cardRoutes);
 app.route('/exchanges', exchangeRoutes);
 app.route('/cleanup', cleanupRoutes);

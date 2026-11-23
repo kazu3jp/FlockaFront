@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
-import { hashPassword, verifyPassword, generateJWT, generateEmailVerificationToken, verifyEmailVerificationToken } from '../utils/auth';
-import { sendVerificationEmail } from '../utils/email';
-import { validateUserName } from '../utils/validation';
-import { authMiddleware, getCurrentUser } from '../middleware/auth';
-import type { HonoEnv, RegisterRequest, LoginRequest, VerifyEmailRequest, ForgotPasswordRequest, ResetPasswordRequest, User } from '../types';
+import { hashPassword, verifyPassword, generateJWT, generateEmailVerificationToken, verifyEmailVerificationToken } from '../../utils/auth';
+import { sendVerificationEmail } from '../../utils/email';
+import { validateUserName } from '../../utils/validation';
+import { authMiddleware, getCurrentUser } from '../../middleware/auth';
+import type { HonoEnv, RegisterRequest, LoginRequest, VerifyEmailRequest, ForgotPasswordRequest, ResetPasswordRequest, User } from '../../types';
+import accountRoutes from './account';
 
 const auth = new Hono<HonoEnv>();
+auth.route('/', accountRoutes);
 
 /**
  * POST /auth/register
@@ -209,78 +211,6 @@ auth.post('/verify-email', async (c) => {
     return c.json({
       success: false,
       error: 'Email verification failed',
-    }, 500);
-  }
-});
-
-/**
- * GET /auth/me
- * 現在のユーザー情報を取得（要認証）
- */
-auth.get('/me', authMiddleware, async (c) => {
-  try {
-    const currentUser = getCurrentUser(c);
-
-    // ユーザー情報を取得
-    const user = await c.env.DB.prepare(
-      'SELECT id, email, name, email_verified, created_at FROM users WHERE id = ?'
-    ).bind(currentUser.userId).first() as User | null;
-
-    if (!user) {
-      return c.json({
-        success: false,
-        error: 'User not found',
-      }, 404);
-    }
-
-    return c.json({
-      success: true,
-      data: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        email_verified: Boolean(user.email_verified),
-        created_at: user.created_at,
-      },
-    });
-  } catch (error) {
-    console.error('Get user error:', error);
-    return c.json({
-      success: false,
-      error: 'Failed to get user information',
-    }, 500);
-  }
-});
-
-/**
- * DELETE /auth/me
- * ユーザーアカウントを削除（要認証）
- */
-auth.delete('/me', authMiddleware, async (c) => {
-  try {
-    const currentUser = getCurrentUser(c);
-
-    // ユーザーを削除（CASCADE により関連データも削除される）
-    const result = await c.env.DB.prepare(
-      'DELETE FROM users WHERE id = ?'
-    ).bind(currentUser.userId).run();
-
-    if (result.meta && result.meta.changes === 0) {
-      return c.json({
-        success: false,
-        error: 'User not found',
-      }, 404);
-    }
-
-    return c.json({
-      success: true,
-      message: 'Account deleted successfully',
-    });
-  } catch (error) {
-    console.error('Delete user error:', error);
-    return c.json({
-      success: false,
-      error: 'Failed to delete account',
     }, 500);
   }
 });

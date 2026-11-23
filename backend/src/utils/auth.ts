@@ -30,8 +30,18 @@ export function generateJWT(payload: Omit<JWTPayload, 'exp'>, secret: string): s
  */
 export function verifyJWT(token: string, secret: string): JWTPayload | null {
   try {
-    return jwt.verify(token, secret) as JWTPayload;
-  } catch (error) {
+    const payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
+    if (
+      typeof payload === 'string' ||
+      typeof payload.userId !== 'string' || !payload.userId ||
+      typeof payload.email !== 'string' || !payload.email ||
+      typeof payload.exp !== 'number' ||
+      payload.purpose !== undefined
+    ) {
+      return null;
+    }
+    return { userId: payload.userId, email: payload.email, exp: payload.exp };
+  } catch {
     return null;
   }
 }
