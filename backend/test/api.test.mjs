@@ -12,6 +12,7 @@ const config = unstable_readConfig({
 });
 const user = { id: 'legacy-user', email: 'legacy@example.com', password: 'test-password' };
 const baseUrl = config.vars.BETTER_AUTH_URL;
+const sender = 'Flocka <auth@example.com>';
 const worker = new Miniflare(convertV4MiniflareOptions({
   cf: false,
   modules: true,
@@ -22,16 +23,19 @@ const worker = new Miniflare(convertV4MiniflareOptions({
     ...config.vars,
     ENVIRONMENT: 'production',
     BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
-    MAILCHANNELS_API_KEY: 'test-key',
+    RESEND_API_KEY: 'test-key',
+    RESEND_FROM_EMAIL: sender,
   },
   d1Databases: ['DB'],
   r2Buckets: ['R2'],
   outboundService: async (request) => {
-    assert.equal(request.url, 'https://api.mailchannels.net/tx/v1/send');
-    assert.equal(request.headers.get('X-Api-Key'), 'test-key');
+    assert.equal(request.url, 'https://api.resend.com/emails');
+    assert.equal(request.method, 'POST');
+    assert.equal(request.headers.get('Authorization'), 'Bearer test-key');
     const mail = await request.json();
-    pendingMail.get(mail.personalizations[0].to[0].email)?.(mail);
-    return new Response(null, { status: 202 });
+    assert.equal(mail.from, sender);
+    pendingMail.get(mail.to[0])?.(mail);
+    return Response.json({ id: 'test-email-id' });
   },
 }));
 
@@ -188,7 +192,8 @@ test('sign-up, verification email, password reset and account deletion', { timeo
   const verificationMail = captureMail(email);
   const registration = await post('/auth/register', { email, name: null, password });
   assert.equal(registration.status, 201, await registration.text());
-  const confirmationUrl = (await verificationMail).content[0].value.split('\n').at(-1);
+  const confirmationUrl = (await verificationMail).text.split('\n').at(-1);
+  assert.equal(new URL(confirmationUrl).origin, baseUrl);
   const verified = await request(confirmationUrl);
   assert.equal(verified.status, 302);
   assert.equal(new URL(verified.headers.get('location'), baseUrl).pathname, '/auth/verified');
@@ -199,7 +204,8 @@ test('sign-up, verification email, password reset and account deletion', { timeo
   const resetMail = captureMail(email);
   const resetRequest = await post('/auth/forgot-password', { email });
   assert.equal(resetRequest.status, 200);
-  const resetUrl = (await resetMail).content[0].value.split('\n').at(-1);
+  const resetUrl = (await resetMail).text.split('\n').at(-1);
+  assert.equal(new URL(resetUrl).origin, baseUrl);
   const redirect = await request(resetUrl);
   assert.equal(redirect.status, 302);
   const resetPage = new URL(redirect.headers.get('location'), baseUrl);

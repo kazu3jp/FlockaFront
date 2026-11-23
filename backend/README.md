@@ -17,7 +17,7 @@ Flocka API は、プロフィールカードの作成・共有・交換を行う
 - 認証: Better Auth（メール・パスワード、Bearerセッション）
 - データベース: Cloudflare D1（SQLite。アプリデータと認証データを保存）
 - ストレージ: Cloudflare R2（画像ファイル）
-- メール配信: MailChannels API
+- メール配信: Resend API
 - 言語: TypeScript
 
 ## API エンドポイント（概要）
@@ -98,7 +98,7 @@ npm run db:init
 npm run dev
 ```
 
-メール送信を確認する場合は `.dev.vars` に `MAILCHANNELS_API_KEY` を設定します。メールの認証・再設定リンクは `BETTER_AUTH_URL` を使うため、実機など別端末でリンクを開く場合は `wrangler.local.jsonc` の値を端末から到達できるURLに変更してください。Expo Webを別のオリジンで使う場合は、そのオリジンを `AUTH_TRUSTED_ORIGINS` に追加します。
+メール送信を確認する場合は `.dev.vars` に `RESEND_API_KEY` と `RESEND_FROM_EMAIL` を設定します。例の `onboarding@resend.dev` は試験用で、通常の配信には [Resendで認証した所有ドメイン](https://resend.com/docs/dashboard/domains/introduction) のアドレスが必要です。メールの認証・再設定リンクは `BETTER_AUTH_URL` を使うため、実機など別端末でリンクを開く場合は `wrangler.local.jsonc` の値を端末から到達できるURLに変更してください。Expo Webを別のオリジンで使う場合は、そのオリジンを `AUTH_TRUSTED_ORIGINS` に追加します。
 
 ```bash
 npm run type-check
@@ -107,7 +107,7 @@ npm test
 
 `npm test` はWorkerをドライランでビルドし、Miniflareの一時D1を使ってAPIを検証します。本番リソースやメール配信サービスには接続しません。`wrangler.local.jsonc` または `.dev.vars.example` のバインディングを変更したら、`npm run types:generate` で型を再生成してください。
 
-本番では既存の `DB`・`R2` バインディングに加え、`ENVIRONMENT=production`、公開HTTPSの `BETTER_AUTH_URL`、必要に応じて `AUTH_TRUSTED_ORIGINS` を設定します。`BETTER_AUTH_SECRET` と `MAILCHANNELS_API_KEY` は Workers のシークレットに登録します。
+公開環境では `DB`・`R2` バインディングに加え、`ENVIRONMENT=production`、公開HTTPSの `BETTER_AUTH_URL`、認証済みの送信元 `RESEND_FROM_EMAIL`、必要に応じて `AUTH_TRUSTED_ORIGINS` を設定します。`BETTER_AUTH_SECRET` と `RESEND_API_KEY` は Workers のシークレットに登録します。APIとメール送信元は別ドメインで構いません。例えば、検証用Workerの `workers.dev` URL をAPIに使い、別途Resendで認証したドメインからメールを送れます。
 
 既存環境を切り替える場合は、D1をバックアップして検証環境でマイグレーションを確認してから、旧Workerへの書き込みを止めます。本番設定でD1の `migrations_dir` を `db/migrations` に指定し、`npx wrangler d1 migrations apply DB --remote --config wrangler.toml` を実行してから `npm run deploy` で新Workerに切り替えます。この移行は旧Workerとの同時稼働には対応しません。
 
